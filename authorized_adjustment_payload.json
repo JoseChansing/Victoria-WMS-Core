@@ -1,0 +1,7 @@
+{
+    "tenantId": "PERFECTPTY",
+    "lpnId": "LPN-COUNT-002",
+    "newQuantity": 82,
+    "reason": "SCRAP_APPROVED_BY_SUPERVISOR",
+    "supervisorId": "SUPER-MARIO"
+}

@@ -89,6 +89,27 @@ namespace Victoria.Inventory.Domain.Aggregates
             ParentLpnId = parentLpnId;
         }
 
+        public void ReportCount(int currentQuantity, string userId, string stationId)
+        {
+            var @event = new InventoryCountCompleted(Tenant.Value, Id, Quantity, currentQuantity, DateTime.UtcNow, userId, stationId);
+            Apply(@event);
+            _changes.Add(@event);
+        }
+
+        public void AdjustQuantity(int newQuantity, string reason, string userId, string stationId)
+        {
+            var @event = new InventoryAdjusted(Tenant.Value, Id, Quantity, newQuantity, reason, DateTime.UtcNow, userId, stationId);
+            Apply(@event);
+            _changes.Add(@event);
+        }
+
+        public void Quarantine(string reason, string userId, string stationId)
+        {
+            var @event = new LpnQuarantined(Tenant.Value, Id, reason, DateTime.UtcNow, userId, stationId);
+            Apply(@event);
+            _changes.Add(@event);
+        }
+
         private void Apply(IDomainEvent @event)
         {
             switch (@event)
@@ -120,6 +141,15 @@ namespace Victoria.Inventory.Domain.Aggregates
                 case PackingCompleted e:
                     Status = LpnStatus.Putaway; // Los contenedores maestros nacen ubicables o en staging
                     break;
+                case InventoryCountCompleted e:
+                    // El conteo por sí solo no cambia estado, solo audita
+                    break;
+                case InventoryAdjusted e:
+                    Quantity = e.NewQuantity;
+                    break;
+                case LpnQuarantined e:
+                    Status = LpnStatus.Quarantine;
+                    break;
             }
         }
 
@@ -134,6 +164,8 @@ namespace Victoria.Inventory.Domain.Aggregates
         Allocated,
         Picked,
         Dispatched,
-        Shipped
+        Shipped,
+        Quarantine,
+        Blocked
     }
 }

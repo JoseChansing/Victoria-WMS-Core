@@ -25,6 +25,7 @@ builder.Services.AddScoped<IEventStore, PostgresEventStore>();
 // 4. Register Application Services
 builder.Services.AddScoped<Victoria.Inventory.Domain.Services.LabelService>();
 builder.Services.AddScoped<Victoria.Infrastructure.Integration.DispatchEventHandler>();
+builder.Services.AddScoped<Victoria.Inventory.Application.Services.CycleCountService>();
 builder.Services.AddScoped<AllocationService>();
 builder.Services.AddScoped<ReceiveLpnHandler>();
 builder.Services.AddScoped<PutawayLpnHandler>();

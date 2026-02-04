@@ -80,4 +80,34 @@ namespace Victoria.Inventory.Domain.Events
         string CreatedBy,
         string StationId
     ) : IDomainEvent;
+
+    public record InventoryCountCompleted(
+        string TenantId,
+        string LpnId,
+        int ExpectedQuantity,
+        int CountedQuantity,
+        DateTime OccurredOn,
+        string CreatedBy,
+        string StationId
+    ) : IDomainEvent;
+
+    public record InventoryAdjusted(
+        string TenantId,
+        string LpnId,
+        int OldQuantity,
+        int NewQuantity,
+        string ReasonCode,
+        DateTime OccurredOn,
+        string CreatedBy,
+        string StationId
+    ) : IDomainEvent;
+
+    public record LpnQuarantined(
+        string TenantId,
+        string LpnId,
+        string Reason,
+        DateTime OccurredOn,
+        string CreatedBy,
+        string StationId
+    ) : IDomainEvent;
 }

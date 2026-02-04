@@ -18,6 +18,7 @@ namespace Victoria.API.Controllers
         private readonly PickLpnHandler _pickHandler;
         private readonly PackingHandler _packingHandler;
         private readonly Victoria.Inventory.Application.Services.DispatchService _dispatchService;
+        private readonly Victoria.Inventory.Application.Services.CycleCountService _countService;
         private readonly Victoria.Infrastructure.Integration.DispatchEventHandler _odooIntegration;
 
         public InventoryController(
@@ -27,6 +28,7 @@ namespace Victoria.API.Controllers
             PickLpnHandler pickHandler,
             PackingHandler packingHandler,
             Victoria.Inventory.Application.Services.DispatchService dispatchService,
+            Victoria.Inventory.Application.Services.CycleCountService countService,
             Victoria.Infrastructure.Integration.DispatchEventHandler odooIntegration)
         {
             _receiveHandler = receiveHandler;
@@ -35,6 +37,7 @@ namespace Victoria.API.Controllers
             _pickHandler = pickHandler;
             _packingHandler = packingHandler;
             _dispatchService = dispatchService;
+            _countService = countService;
             _odooIntegration = odooIntegration;
         }
 
@@ -157,6 +160,31 @@ namespace Victoria.API.Controllers
             catch (TenantSecurityException ex) { return StatusCode(403, new { Error = ex.Message }); }
             catch (Exception ex) { return StatusCode(500, new { Error = ex.Message }); }
         }
+
+        [HttpPost("count")]
+        public async Task<IActionResult> ReportCount([FromBody] ReportCountRequest request)
+        {
+            try
+            {
+                await _countService.ProcessBlindCount(request.TenantId, request.LpnId, request.CountedQuantity, request.UserId, request.StationId);
+                return Ok(new { Message = "Count processed successfully.", LpnId = request.LpnId });
+            }
+            catch (TenantSecurityException ex) { return StatusCode(403, new { Error = ex.Message }); }
+            catch (Exception ex) { return StatusCode(500, new { Error = ex.Message }); }
+        }
+
+        [HttpPost("adjust")]
+        public async Task<IActionResult> AuthorizeAdjustment([FromBody] AuthorizeAdjustmentRequest request)
+        {
+            try
+            {
+                await _countService.AuthorizeAdjustment(request.TenantId, request.LpnId, request.NewQuantity, request.Reason, request.SupervisorId);
+                return Ok(new { Message = "Adjustment authorized and completed.", LpnId = request.LpnId });
+            }
+            catch (TenantSecurityException ex) { return StatusCode(403, new { Error = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (Exception ex) { return StatusCode(500, new { Error = ex.Message }); }
+        }
     }
 
     public record ReceiveLpnRequest(string TenantId, string LpnId, string OrderId, string UserId, string StationId);
@@ -165,4 +193,6 @@ namespace Victoria.API.Controllers
     public record PickLpnRequest(string TenantId, string LpnId, string UserId, string StationId);
     public record PackLpnsRequest(string TenantId, string MasterLpnId, List<string> ChildLpnIds, double Weight, string UserId, string StationId);
     public record DispatchOrderRequest(string TenantId, string DockDoor, string UserId);
+    public record ReportCountRequest(string TenantId, string LpnId, int CountedQuantity, string UserId, string StationId);
+    public record AuthorizeAdjustmentRequest(string TenantId, string LpnId, int NewQuantity, string Reason, string SupervisorId);
 }
