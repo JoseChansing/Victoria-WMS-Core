@@ -36,6 +36,12 @@ builder.Services.AddScoped<PickLpnHandler>();
 builder.Services.AddScoped<PackingHandler>();
 builder.Services.AddScoped<Victoria.Inventory.Application.Services.DispatchService>();
 
+// 5. Odoo Integration Mix (ACL)
+builder.Services.AddSingleton<Victoria.Core.Messaging.IMessageBus, Victoria.Core.Messaging.InMemoryMessageBus>();
+builder.Services.AddScoped<Victoria.Infrastructure.Integration.Odoo.ProductSyncService>();
+builder.Services.AddScoped<Victoria.Infrastructure.Integration.Odoo.InboundOrderSyncService>();
+builder.Services.AddScoped<Victoria.Infrastructure.Integration.Odoo.OdooFeedbackService>();
+
 builder.Services.AddControllers();
 
 // 5. Habilitación de Swagger (Fase 4 Requirement)

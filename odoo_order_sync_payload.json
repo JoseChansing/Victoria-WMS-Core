@@ -1,0 +1,18 @@
+{
+    "orderNumber": "SO-ODOO-500",
+    "companyId": 1,
+    "lines": [
+        {
+            "productId": "SKU-PROMO",
+            "quantity": 5
+        },
+        {
+            "productId": "SKU-PROMO",
+            "quantity": 10
+        },
+        {
+            "productId": "SKU-STANDARD",
+            "quantity": 3
+        }
+    ]
+}

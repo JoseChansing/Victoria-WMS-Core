@@ -1,0 +1,8 @@
+{
+    "odooId": 12345,
+    "companyId": 1,
+    "name": "Producto de Prueba Odoo",
+    "internalReference": "SKU-ODOO-001",
+    "weight": 1.5,
+    "volume": 0.02
+}
