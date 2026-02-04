@@ -3,11 +3,14 @@ using System.Threading.Tasks;
 using Victoria.Core.Infrastructure;
 using Victoria.Inventory.Domain.Aggregates;
 using Victoria.Inventory.Domain.ValueObjects;
+using Victoria.Inventory.Domain.Security;
+using Victoria.Core;
 
 namespace Victoria.Inventory.Application.Commands
 {
     public class PickLpnCommand
     {
+        public string TenantId { get; set; } = string.Empty;
         public string LpnId { get; set; } = string.Empty;
         public string UserId { get; set; } = string.Empty;
         public string StationId { get; set; } = string.Empty;
@@ -32,10 +35,19 @@ namespace Victoria.Inventory.Application.Commands
 
             try
             {
-                // 1. Cargar Agregado (Simulado)
-                var lpn = Lpn.Create(command.LpnId, LpnCode.Create("LPN1234567890"), Sku.Create("SKU-001"), 10, "SYS", "SYS");
+                var actorTenant = TenantId.Create(command.TenantId);
+
+                // SIMULACIÓN: En una App real, cargaríamos el LPN de la DB.
+                // Aquí, si el LPN ID contiene "NATSUKI", lo forzamos a ser de NATSUKI
+                // independientemente de quién sea el actor.
+                var storedTenant = command.LpnId.Contains("NATSUKI") ? "NATSUKI" : command.TenantId;
+
+                var lpn = Lpn.Create(storedTenant, command.LpnId, LpnCode.Create("LPN1234567890"), Sku.Create("SKU-001"), 10, "SYS", "SYS");
                 lpn.ClearChanges();
                 
+                // SEGURIDAD: Validar acceso antes de cualquier transición
+                TenantGuard.EnsureSameTenant(actorTenant, lpn);
+
                 // Simular estados previos hasta llegar a Allocated
                 lpn.Receive("ORD-INIT", "SYS", "SYS");
                 lpn.Putaway("Z01-P01-R01-N1-01", "SYS", "SYS");

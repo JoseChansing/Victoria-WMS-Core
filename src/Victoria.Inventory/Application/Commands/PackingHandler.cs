@@ -5,11 +5,14 @@ using Victoria.Core.Infrastructure;
 using Victoria.Inventory.Domain.Aggregates;
 using Victoria.Inventory.Domain.ValueObjects;
 using Victoria.Inventory.Domain.Events;
+using Victoria.Inventory.Domain.Security;
+using Victoria.Core;
 
 namespace Victoria.Inventory.Application.Commands
 {
     public class PackLpnsCommand
     {
+        public string TenantId { get; set; } = string.Empty;
         public string MasterLpnId { get; set; } = string.Empty;
         public List<string> ChildLpnIds { get; set; } = new();
         public double Weight { get; set; }
@@ -37,12 +40,14 @@ namespace Victoria.Inventory.Application.Commands
             try
             {
                 var batches = new List<EventStreamBatch>();
+                var actorTenant = TenantId.Create(command.TenantId);
 
-                // 1. Crear el Contenedor Maestro
-                var masterLpn = Lpn.Create(command.MasterLpnId, LpnCode.Create("LPN9990000001"), Sku.Create("CONTAINER-01"), 1, command.UserId, command.StationId);
+                // 1. Crear el Contenedor Maestro con Tenant
+                var masterLpn = Lpn.Create(command.TenantId, command.MasterLpnId, LpnCode.Create("LPN9990000001"), Sku.Create("CONTAINER-01"), 1, command.UserId, command.StationId);
                 masterLpn.ClearChanges();
 
                 var packingEvent = new PackingCompleted(
+                    command.TenantId,
                     command.MasterLpnId,
                     command.ChildLpnIds,
                     command.Weight,

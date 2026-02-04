@@ -3,11 +3,14 @@ using System.Threading.Tasks;
 using Victoria.Core.Infrastructure;
 using Victoria.Inventory.Domain.Aggregates;
 using Victoria.Inventory.Domain.ValueObjects;
+using Victoria.Inventory.Domain.Security;
+using Victoria.Core;
 
 namespace Victoria.Inventory.Application.Commands
 {
     public class PutawayLpnCommand
     {
+        public string TenantId { get; set; } = string.Empty;
         public string LpnId { get; set; } = string.Empty;
         public string LocationCode { get; set; } = string.Empty;
         public string UserId { get; set; } = string.Empty;
@@ -32,25 +35,32 @@ namespace Victoria.Inventory.Application.Commands
 
             // REQUISITO CRÍTICO: Doble Bloqueo Secuencial
             if (!await _lockService.AcquireLockAsync(lpnLockKey, TimeSpan.FromSeconds(30)))
-                throw new InvalidOperationException($"Could not acquire lock for LPN {command.LpnId}");
+                throw new InvalidOperationException("Could not lock LPN");
 
             try
             {
                 if (!await _lockService.AcquireLockAsync(locLockKey, TimeSpan.FromSeconds(30)))
-                    throw new InvalidOperationException($"Could not acquire lock for Location {command.LocationCode}");
+                    throw new InvalidOperationException("Could not lock Location");
 
                 try
                 {
-                    // 1. Cargar Agregados (Simulado para el Walking Skeleton)
+                    var actorTenant = TenantId.Create(command.TenantId);
+
+                    // 1. Cargar Agregados (Simulado con Tenancy)
                     // En producción: await _eventStore.GetEventsAsync(...)
-                    var lpn = Lpn.Create(command.LpnId, LpnCode.Create("LPN1234567890"), Sku.Create("SKU-001"), 10, "ROOT", "INIT");
+                    var lpn = Lpn.Create(command.TenantId, command.LpnId, LpnCode.Create("LPN1234567890"), Sku.Create("SKU-001"), 10, command.UserId, command.StationId);
                     lpn.ClearChanges();
                     // Simulamos que ya fue recibido
-                    lpn.Receive("ORD-MOCK", "SYS", "SYS"); 
+                    lpn.Receive("ORD-INIT", "SYS", "SYS"); 
                     lpn.ClearChanges();
 
-                    var location = Location.Create(LocationCode.Create(command.LocationCode), command.UserId, command.StationId);
+                    var location = Location.Create(command.TenantId, LocationCode.Create(command.LocationCode));
                     location.ClearChanges();
+
+                    // SEGURIDAD: Validar que el actor pertenezca al Tenant del LPN y la Ubicación
+                    TenantGuard.EnsureSameTenant(actorTenant, lpn);
+                    TenantGuard.EnsureSameTenant(actorTenant, location);
+                    TenantGuard.EnsureCompatibility(lpn, location);
 
                     // 2. Ejecutar Lógica de Negocio (Coordinada)
                     lpn.Putaway(command.LocationCode, command.UserId, command.StationId);

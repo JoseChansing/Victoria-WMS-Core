@@ -9,6 +9,7 @@ namespace Victoria.Inventory.Domain.Aggregates
     public sealed class Lpn
     {
         public string Id { get; private set; }
+        public TenantId Tenant { get; private set; }
         public LpnCode Code { get; private set; }
         public Sku Sku { get; private set; }
         public int Quantity { get; private set; }
@@ -22,10 +23,10 @@ namespace Victoria.Inventory.Domain.Aggregates
 
         private Lpn() { } // For pattern matching or internal use
 
-        public static Lpn Create(string id, LpnCode code, Sku sku, int quantity, string userId, string stationId)
+        public static Lpn Create(string tenantId, string id, LpnCode code, Sku sku, int quantity, string userId, string stationId)
         {
             var lpn = new Lpn();
-            var @event = new LpnCreated(id, code.Value, sku.Value, quantity, DateTime.UtcNow, userId, stationId);
+            var @event = new LpnCreated(tenantId, id, code.Value, sku.Value, quantity, DateTime.UtcNow, userId, stationId);
             lpn.Apply(@event);
             lpn._changes.Add(@event);
             return lpn;
@@ -33,31 +34,18 @@ namespace Victoria.Inventory.Domain.Aggregates
 
         public void Receive(string orderId, string userId, string stationId)
         {
-            if (Status == LpnStatus.Shipped)
-                throw new InvalidOperationException("Cannot receive an LPN that has already been shipped.");
-            
-            if (Status == LpnStatus.Received)
-                throw new InvalidOperationException("LPN is already received.");
-
-            var @event = new ReceiptCompleted(Id, orderId, DateTime.UtcNow, userId, stationId);
+            var @event = new LpnReceived(Tenant.Value, Id, orderId, DateTime.UtcNow, userId, stationId);
             Apply(@event);
             _changes.Add(@event);
         }
 
         public void Putaway(string targetLocation, string userId, string stationId)
         {
-            if (Status != LpnStatus.Received)
-                throw new InvalidOperationException($"LPN must be in Received status for Putaway. Current status: {Status}");
+            var moveEvent = new LpnLocationChanged(Tenant.Value, Id, targetLocation, CurrentLocation ?? "RECEIPT", DateTime.UtcNow, userId, stationId);
+            Apply(moveEvent);
+            _changes.Add(moveEvent);
 
-            var oldLocation = CurrentLocation ?? "RECEIPT";
-            
-            // Evento Físico
-            var locEvent = new LocationChanged(Id, oldLocation, targetLocation, DateTime.UtcNow, userId, stationId);
-            Apply(locEvent);
-            _changes.Add(locEvent);
-
-            // Evento de Negocio
-            var putawayEvent = new PutawayCompleted(Id, targetLocation, DateTime.UtcNow, userId, stationId);
+            var putawayEvent = new PutawayCompleted(Tenant.Value, Id, targetLocation, DateTime.UtcNow, userId, stationId);
             Apply(putawayEvent);
             _changes.Add(putawayEvent);
         }
@@ -70,7 +58,7 @@ namespace Victoria.Inventory.Domain.Aggregates
             if (Sku != sku)
                 throw new ArgumentException($"SKU mismatch. Expected: {Sku}, Requested: {sku}");
 
-            var @event = new LpnAllocated(Id, orderId, sku.Value, DateTime.UtcNow, userId, stationId);
+            var @event = new LpnAllocated(Tenant.Value, Id, orderId, sku.Value, DateTime.UtcNow, userId, stationId);
             Apply(@event);
             _changes.Add(@event);
         }
@@ -80,7 +68,7 @@ namespace Victoria.Inventory.Domain.Aggregates
             if (Status != LpnStatus.Allocated)
                 throw new InvalidOperationException($"LPN must be Allocated before Picking. Current status: {Status}");
 
-            var @event = new LpnPicked(Id, DateTime.UtcNow, userId, stationId);
+            var @event = new LpnPicked(Tenant.Value, Id, DateTime.UtcNow, userId, stationId);
             Apply(@event);
             _changes.Add(@event);
         }
@@ -107,15 +95,16 @@ namespace Victoria.Inventory.Domain.Aggregates
             {
                 case LpnCreated e:
                     Id = e.LpnId;
+                    Tenant = TenantId.Create(e.TenantId);
                     Code = LpnCode.Create(e.LpnCode);
                     Sku = Sku.Create(e.Sku);
                     Quantity = e.Quantity;
                     Status = LpnStatus.Created;
                     break;
-                case ReceiptCompleted e:
+                case LpnReceived e:
                     Status = LpnStatus.Received;
                     break;
-                case LocationChanged e:
+                case LpnLocationChanged e:
                     CurrentLocation = e.NewLocation;
                     break;
                 case PutawayCompleted e:

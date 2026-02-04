@@ -4,6 +4,7 @@ using Victoria.Core;
 namespace Victoria.Inventory.Domain.Events
 {
     public record LocationCreated(
+        string TenantId,
         string LocationCode,
         string Zone,
         DateTime OccurredOn,
@@ -11,7 +12,8 @@ namespace Victoria.Inventory.Domain.Events
         string StationId
     ) : IDomainEvent;
 
-    public record LpnAssignedToLocation(
+    public record LocationAssigned(
+        string TenantId,
         string LocationCode,
         string LpnCode,
         DateTime OccurredOn,

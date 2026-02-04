@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Generic;
 using Victoria.Core;
 
 namespace Victoria.Inventory.Domain.Events
 {
     public record LpnCreated(
+        string TenantId,
         string LpnId,
         string LpnCode,
         string Sku,
@@ -13,7 +15,8 @@ namespace Victoria.Inventory.Domain.Events
         string StationId
     ) : IDomainEvent;
 
-    public record ReceiptCompleted(
+    public record LpnReceived(
+        string TenantId,
         string LpnId,
         string OrderId,
         DateTime OccurredOn,
@@ -21,16 +24,18 @@ namespace Victoria.Inventory.Domain.Events
         string StationId
     ) : IDomainEvent;
 
-    public record LocationChanged(
+    public record LpnLocationChanged(
+        string TenantId,
         string LpnId,
-        string OldLocation,
         string NewLocation,
+        string OldLocation,
         DateTime OccurredOn,
         string CreatedBy,
         string StationId
     ) : IDomainEvent;
 
     public record PutawayCompleted(
+        string TenantId,
         string LpnId,
         string LocationCode,
         DateTime OccurredOn,
@@ -39,6 +44,7 @@ namespace Victoria.Inventory.Domain.Events
     ) : IDomainEvent;
 
     public record LpnAllocated(
+        string TenantId,
         string LpnId,
         string OrderId,
         string Sku,
@@ -48,6 +54,7 @@ namespace Victoria.Inventory.Domain.Events
     ) : IDomainEvent;
 
     public record LpnPicked(
+        string TenantId,
         string LpnId,
         DateTime OccurredOn,
         string CreatedBy,
@@ -55,6 +62,7 @@ namespace Victoria.Inventory.Domain.Events
     ) : IDomainEvent;
 
     public record PackingCompleted(
+        string TenantId,
         string MasterLpnId,
         IEnumerable<string> ChildLpnIds,
         double TotalWeight,
@@ -64,6 +72,7 @@ namespace Victoria.Inventory.Domain.Events
     ) : IDomainEvent;
 
     public record DispatchConfirmed(
+        string TenantId,
         string OrderId,
         string DockDoor,
         IEnumerable<string> DispatchedLpnIds,

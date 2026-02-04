@@ -14,6 +14,7 @@ namespace Victoria.Infrastructure.Integration
             var odooDto = new
             {
                 Operation = "WMS_DISPATCH_CONFIRMED",
+                Tenant = @event.TenantId,
                 ExternalOrderId = @event.OrderId,
                 Dock = @event.DockDoor,
                 Timestamp = @event.OccurredOn,

@@ -1,9 +1,9 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Threading.Tasks;
+using Victoria.Core;
 using Victoria.Core.Infrastructure;
 using Victoria.Inventory.Domain.Aggregates;
+using Victoria.Inventory.Domain.Security;
 using Victoria.Inventory.Domain.ValueObjects;
 
 namespace Victoria.Inventory.Domain.Services
@@ -19,13 +19,11 @@ namespace Victoria.Inventory.Domain.Services
             _lockService = lockService;
         }
 
-        public async Task AllocateStockForOrder(string orderId, Sku sku, int quantity, string userId, string stationId)
+        public async Task AllocateStockForOrder(string tenantId, string orderId, Sku sku, int quantity, string userId, string stationId)
         {
-            // REQUISITO: Buscar LPNs disponibles (Simulación para el Walking Skeleton)
-            // En un entorno real, usarías una Proyección de Inventario (Read Model) en PostgreSQL
-            // Aquí simulamos que encontramos los LPNs necesarios.
+            var actorTenant = TenantId.Create(tenantId);
             
-            var candidateLpns = new List<string> { "LPN-TEST-001" }; // Supongamos que este es el que movimos en Fase 6
+            var candidateLpns = new List<string> { "LPN-TEST-001" };
             
             var batches = new List<EventStreamBatch>();
             var acquiredLocks = new List<string>();
@@ -40,10 +38,13 @@ namespace Victoria.Inventory.Domain.Services
                     
                     acquiredLocks.Add(lockKey);
 
-                    // Cargar Agregado (Simulado)
-                    var lpn = Lpn.Create(lpnId, LpnCode.Create("LPN1234567890"), sku, 10, "SYS", "SYS");
+                    // Cargar Agregado (Simulado con Tenancy)
+                    var lpn = Lpn.Create(tenantId, lpnId, LpnCode.Create("LPN1234567890"), sku, 10, "SYS", "SYS");
                     lpn.ClearChanges();
                     
+                    // SEGURIDAD: Validar acceso
+                    TenantGuard.EnsureSameTenant(actorTenant, lpn);
+
                     // Simular que ya fue recibido y ubicado para poder reservarlo
                     lpn.Receive("ORD-INIT", "SYS", "SYS");
                     lpn.Putaway("Z01-P01-R01-N1-01", "SYS", "SYS");

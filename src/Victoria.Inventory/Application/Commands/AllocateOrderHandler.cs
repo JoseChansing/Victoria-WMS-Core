@@ -2,11 +2,13 @@ using System;
 using System.Threading.Tasks;
 using Victoria.Inventory.Domain.Services;
 using Victoria.Inventory.Domain.ValueObjects;
+using Victoria.Core;
 
 namespace Victoria.Inventory.Application.Commands
 {
     public class AllocateOrderCommand
     {
+        public string TenantId { get; set; } = string.Empty;
         public string OrderId { get; set; } = string.Empty;
         public string Sku { get; set; } = string.Empty;
         public int Quantity { get; set; }
@@ -27,6 +29,7 @@ namespace Victoria.Inventory.Application.Commands
         {
             // Delegar al Servicio de Dominio (Cerebro)
             await _allocationService.AllocateStockForOrder(
+                command.TenantId,
                 command.OrderId, 
                 Sku.Create(command.Sku), 
                 command.Quantity, 

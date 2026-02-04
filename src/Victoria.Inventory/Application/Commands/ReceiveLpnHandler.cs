@@ -7,10 +7,11 @@ namespace Victoria.Inventory.Application.Commands
 {
     public class ReceiveLpnCommand
     {
-        public string LpnId { get; set; }
-        public string OrderId { get; set; }
-        public string UserId { get; set; }
-        public string StationId { get; set; }
+        public string TenantId { get; set; } = string.Empty;
+        public string LpnId { get; set; } = string.Empty;
+        public string OrderId { get; set; } = string.Empty;
+        public string UserId { get; set; } = string.Empty;
+        public string StationId { get; set; } = string.Empty;
     }
 
     public class ReceiveLpnHandler
@@ -19,7 +20,7 @@ namespace Victoria.Inventory.Application.Commands
         private readonly Victoria.Core.Infrastructure.ILockService _lockService;
 
         public ReceiveLpnHandler(
-            Victoria.Core.Infrastructure.IEventStore eventStore,
+            Victoria.Core.Infrastructure.IEventStore eventStore, 
             Victoria.Core.Infrastructure.ILockService lockService)
         {
             _eventStore = eventStore;
@@ -30,9 +31,7 @@ namespace Victoria.Inventory.Application.Commands
         {
             var lockKey = $"LOCK:LPN:{command.LpnId}";
             if (!await _lockService.AcquireLockAsync(lockKey, TimeSpan.FromSeconds(30)))
-            {
                 throw new InvalidOperationException($"Could not acquire lock for LPN {command.LpnId}");
-            }
 
             try
             {
@@ -41,10 +40,15 @@ namespace Victoria.Inventory.Application.Commands
                 // var lpn = Lpn.Load(events);
                 
                 // For Walking Skeleton, we simulate a fresh aggregate or simple load
-                var lpn = Lpn.Create(command.LpnId, LpnCode.Create("LPN1234567890"), Sku.Create("SKU-ABC-001"), 10, command.UserId, command.StationId);
-                lpn.ClearChanges(); // Clear creation events if we assume it exists, or keep them if new. 
-                // Let's assume for this flow we are receiving an EXISTING LPN (created previously)
-                // But since DB is empty, effectively we are operating on a new object. 
+                // Un LPN nace con un Tenant asignado
+                var lpn = Lpn.Create(
+                    command.TenantId,
+                    command.LpnId, 
+                    LpnCode.Create("LPN1234567890"), 
+                    Sku.Create("SKU-001"), 
+                    10, 
+                    command.UserId, 
+                    command.StationId);
                 
                 // Execute Domain Logic
                 lpn.Receive(command.OrderId, command.UserId, command.StationId);

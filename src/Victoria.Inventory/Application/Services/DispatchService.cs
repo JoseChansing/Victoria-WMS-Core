@@ -5,7 +5,9 @@ using System.Threading.Tasks;
 using Victoria.Core.Infrastructure;
 using Victoria.Inventory.Domain.Aggregates;
 using Victoria.Inventory.Domain.Events;
+using Victoria.Inventory.Domain.Security;
 using Victoria.Inventory.Domain.Services;
+using Victoria.Core;
 
 namespace Victoria.Inventory.Application.Services
 {
@@ -22,10 +24,9 @@ namespace Victoria.Inventory.Application.Services
             _labelService = labelService;
         }
 
-        public async Task<string> DispatchOrder(string orderId, string dockDoor, string userId)
+        public async Task<string> DispatchOrder(string tenantId, string orderId, string dockDoor, string userId)
         {
-            // REQUISITO: Validar Orden Completa
-            // En producción: Consultar base de datos para ver si todos los SKUs de la orden tienen LPNs en 'Picked'
+            var actorTenant = TenantId.Create(tenantId);
             
             var lpnsToShip = new List<string> { "LPN-TEST-001", "MST-TEST-001" }; // Simulación
             
@@ -33,16 +34,20 @@ namespace Victoria.Inventory.Application.Services
             
             foreach(var lpnId in lpnsToShip)
             {
-                // Bloquear y transicionar
-                var lpn = Lpn.Create(lpnId, Victoria.Inventory.Domain.ValueObjects.LpnCode.Create("LPN1234567890"), Victoria.Inventory.Domain.ValueObjects.Sku.Create("SKU-001"), 10, userId, "DISPATCH");
+                // Bloquear y transicionar (Simulado con Tenancy)
+                var lpn = Lpn.Create(tenantId, lpnId, Victoria.Inventory.Domain.ValueObjects.LpnCode.Create("LPN1234567890"), Victoria.Inventory.Domain.ValueObjects.Sku.Create("SKU-001"), 10, userId, "DISPATCH");
                 lpn.ClearChanges();
+
+                // SEGURIDAD
+                TenantGuard.EnsureSameTenant(actorTenant, lpn);
+
                 lpn.Ship(userId);
-                
                 batches.Add(new EventStreamBatch(lpnId, -1, lpn.Changes));
             }
 
-            // Evento de Cierre de Negocio
+            // Evento de Cierre de Negocio con TenantId
             var dispatchEvent = new DispatchConfirmed(
+                tenantId,
                 orderId,
                 dockDoor,
                 lpnsToShip,
