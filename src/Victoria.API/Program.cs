@@ -20,6 +20,8 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Conn
 
 // 3. Register Infrastructure Services (Wiring Interfaces with Implementations)
 builder.Services.AddScoped<ILockService, RedisLockService>();
+builder.Services.AddSingleton<IEpcParser, EpcParser>();
+builder.Services.AddSingleton<IRfidDebouncer, RfidDebouncer>();
 builder.Services.AddScoped<IEventStore, PostgresEventStore>();
 
 // 4. Register Application Services
