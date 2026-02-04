@@ -20,6 +20,16 @@ namespace Victoria.Core
             return !(EqualOperator(left, right));
         }
 
+        public static bool operator ==(ValueObject left, ValueObject right)
+        {
+            return EqualOperator(left, right);
+        }
+
+        public static bool operator !=(ValueObject left, ValueObject right)
+        {
+            return NotEqualOperator(left, right);
+        }
+
         protected abstract IEnumerable<object> GetEqualityComponents();
 
         public override bool Equals(object obj)

@@ -13,6 +13,9 @@ namespace Victoria.Inventory.Domain.Aggregates
         public Sku Sku { get; private set; }
         public int Quantity { get; private set; }
         public LpnStatus Status { get; private set; }
+        public string? CurrentLocation { get; private set; }
+        public string? SelectedOrderId { get; private set; }
+        public string? ParentLpnId { get; private set; }
         
         private readonly List<IDomainEvent> _changes = new();
         public IReadOnlyCollection<IDomainEvent> Changes => _changes.AsReadOnly();
@@ -41,6 +44,63 @@ namespace Victoria.Inventory.Domain.Aggregates
             _changes.Add(@event);
         }
 
+        public void Putaway(string targetLocation, string userId, string stationId)
+        {
+            if (Status != LpnStatus.Received)
+                throw new InvalidOperationException($"LPN must be in Received status for Putaway. Current status: {Status}");
+
+            var oldLocation = CurrentLocation ?? "RECEIPT";
+            
+            // Evento Físico
+            var locEvent = new LocationChanged(Id, oldLocation, targetLocation, DateTime.UtcNow, userId, stationId);
+            Apply(locEvent);
+            _changes.Add(locEvent);
+
+            // Evento de Negocio
+            var putawayEvent = new PutawayCompleted(Id, targetLocation, DateTime.UtcNow, userId, stationId);
+            Apply(putawayEvent);
+            _changes.Add(putawayEvent);
+        }
+
+        public void Allocate(string orderId, Sku sku, string userId, string stationId)
+        {
+            if (Status != LpnStatus.Putaway)
+                throw new InvalidOperationException($"Only LPNs in Putaway status can be allocated. Current status: {Status}");
+
+            if (Sku != sku)
+                throw new ArgumentException($"SKU mismatch. Expected: {Sku}, Requested: {sku}");
+
+            var @event = new LpnAllocated(Id, orderId, sku.Value, DateTime.UtcNow, userId, stationId);
+            Apply(@event);
+            _changes.Add(@event);
+        }
+
+        public void Pick(string userId, string stationId)
+        {
+            if (Status != LpnStatus.Allocated)
+                throw new InvalidOperationException($"LPN must be Allocated before Picking. Current status: {Status}");
+
+            var @event = new LpnPicked(Id, DateTime.UtcNow, userId, stationId);
+            Apply(@event);
+            _changes.Add(@event);
+        }
+
+        public void Ship(string userId)
+        {
+            if (Status != LpnStatus.Picked && Status != LpnStatus.Putaway) // Simplificación para el skeleton
+                // En producción: Debe estar Picked y opcionalmente en un Container
+                Status = LpnStatus.Dispatched;
+            
+            // Nota: Aquí se generaría un evento LpnDispatched si fuera necesario a nivel LPN
+            // Para la fase 8 usaremos el evento de negocio DispatchConfirmed en el Service.
+            Status = LpnStatus.Dispatched;
+        }
+
+        public void SetParent(string parentLpnId)
+        {
+            ParentLpnId = parentLpnId;
+        }
+
         private void Apply(IDomainEvent @event)
         {
             switch (@event)
@@ -55,6 +115,22 @@ namespace Victoria.Inventory.Domain.Aggregates
                 case ReceiptCompleted e:
                     Status = LpnStatus.Received;
                     break;
+                case LocationChanged e:
+                    CurrentLocation = e.NewLocation;
+                    break;
+                case PutawayCompleted e:
+                    Status = LpnStatus.Putaway;
+                    break;
+                case LpnAllocated e:
+                    Status = LpnStatus.Allocated;
+                    SelectedOrderId = e.OrderId;
+                    break;
+                case LpnPicked e:
+                    Status = LpnStatus.Picked;
+                    break;
+                case PackingCompleted e:
+                    Status = LpnStatus.Putaway; // Los contenedores maestros nacen ubicables o en staging
+                    break;
             }
         }
 
@@ -65,6 +141,10 @@ namespace Victoria.Inventory.Domain.Aggregates
     {
         Created,
         Received,
+        Putaway,
+        Allocated,
+        Picked,
+        Dispatched,
         Shipped
     }
 }

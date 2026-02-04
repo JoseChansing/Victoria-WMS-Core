@@ -4,9 +4,12 @@ using Victoria.Core;
 
 namespace Victoria.Core.Infrastructure
 {
+    public record EventStreamBatch(string StreamId, int ExpectedVersion, IEnumerable<IDomainEvent> Events);
+
     public interface IEventStore
     {
         Task AppendEventsAsync(string streamId, int expectedVersion, IEnumerable<IDomainEvent> events);
+        Task SaveBatchAsync(IEnumerable<EventStreamBatch> batches);
         Task<IEnumerable<IDomainEvent>> GetEventsAsync(string streamId);
     }
 

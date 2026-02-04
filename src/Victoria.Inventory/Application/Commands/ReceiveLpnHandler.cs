@@ -15,33 +15,47 @@ namespace Victoria.Inventory.Application.Commands
 
     public class ReceiveLpnHandler
     {
-        // In a real app, these would be injected interfaces
-        // private readonly ILpnRepository _repository;
-        // private readonly ILockService _lockService;
+        private readonly Victoria.Core.Infrastructure.IEventStore _eventStore;
+        private readonly Victoria.Core.Infrastructure.ILockService _lockService;
+
+        public ReceiveLpnHandler(
+            Victoria.Core.Infrastructure.IEventStore eventStore,
+            Victoria.Core.Infrastructure.ILockService lockService)
+        {
+            _eventStore = eventStore;
+            _lockService = lockService;
+        }
 
         public async Task Handle(ReceiveLpnCommand command)
         {
-            Console.WriteLine($"[LOCK] Simulating Redis Lock: LockService.Acquire(\"LOCK:LPN:{command.LpnId}\")");
-            
-            // Simulation logic
-            // 1. Acquire Lock
-            // 2. Load Aggregate from Store (Event Stream)
-            // 3. Process Business Logic
-            
-            // Mocking a loaded aggregate for the skeleton
-            var lpn = Lpn.Create(command.LpnId, LpnCode.Create("LPN1234567890"), Sku.Create("SKU-ABC-001"), 10, command.UserId, command.StationId);
-            lpn.ClearChanges(); // Clear initial creation events for this flow simulation
-
-            Console.WriteLine($"[DOMAIN] Executing lpn.Receive(orderId: {command.OrderId})");
-            lpn.Receive(command.OrderId, command.UserId, command.StationId);
-
-            Console.WriteLine("[PERSISTENCE] Simulating DB Transaction: Marten/PostgreSQL Session.Events.Append(...)");
-            foreach (var @event in lpn.Changes)
+            var lockKey = $"LOCK:LPN:{command.LpnId}";
+            if (!await _lockService.AcquireLockAsync(lockKey, TimeSpan.FromSeconds(30)))
             {
-                Console.WriteLine($"[EVENT] Persisting {@event.GetType().Name} - OccurredOn: {@event.OccurredOn}");
+                throw new InvalidOperationException($"Could not acquire lock for LPN {command.LpnId}");
             }
 
-            Console.WriteLine("[LOCK] Simulating Redis Unlock: LockService.Release(...)");
+            try
+            {
+                // In real app: Load aggregate from event store
+                // var events = await _eventStore.GetEventsAsync(command.LpnId);
+                // var lpn = Lpn.Load(events);
+                
+                // For Walking Skeleton, we simulate a fresh aggregate or simple load
+                var lpn = Lpn.Create(command.LpnId, LpnCode.Create("LPN1234567890"), Sku.Create("SKU-ABC-001"), 10, command.UserId, command.StationId);
+                lpn.ClearChanges(); // Clear creation events if we assume it exists, or keep them if new. 
+                // Let's assume for this flow we are receiving an EXISTING LPN (created previously)
+                // But since DB is empty, effectively we are operating on a new object. 
+                
+                // Execute Domain Logic
+                lpn.Receive(command.OrderId, command.UserId, command.StationId);
+
+                // Persist Events
+                await _eventStore.AppendEventsAsync(command.LpnId, -1, lpn.Changes);
+            }
+            finally
+            {
+                await _lockService.ReleaseLockAsync(lockKey);
+            }
         }
     }
 }

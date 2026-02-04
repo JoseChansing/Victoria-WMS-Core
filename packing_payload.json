@@ -1,0 +1,9 @@
+{
+    "masterLpnId": "MST-TEST-001",
+    "childLpnIds": [
+        "LPN-TEST-001"
+    ],
+    "weight": 1.5,
+    "userId": "PACKER-01",
+    "stationId": "PACK-STATION-01"
+}

@@ -1,0 +1,7 @@
+{
+    "orderId": "ORD-EXPORT-001",
+    "sku": "SKU-ABC-001",
+    "quantity": 1,
+    "userId": "PLANNER-01",
+    "stationId": "OFFICE-01"
+}
