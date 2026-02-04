@@ -1,0 +1,10 @@
+{
+    "tenantId": "PERFECTPTY",
+    "orderId": "PO-100",
+    "sku": "SKU-001",
+    "requestedQuantity": 10,
+    "receivedQuantity": 8,
+    "occurredOn": "2026-02-04T20:25:00Z",
+    "createdBy": "USER-PDA-01",
+    "stationId": "RECEIPT-GATE-4"
+}

@@ -10,6 +10,8 @@ namespace Victoria.Inventory.Application.Commands
         public string TenantId { get; set; } = string.Empty;
         public string LpnId { get; set; } = string.Empty;
         public string OrderId { get; set; } = string.Empty;
+        public int ExpectedQuantity { get; set; }
+        public int ReceivedQuantity { get; set; }
         public string UserId { get; set; } = string.Empty;
         public string StationId { get; set; } = string.Empty;
     }
@@ -46,11 +48,37 @@ namespace Victoria.Inventory.Application.Commands
                     command.LpnId, 
                     LpnCode.Create("LPN1234567890"), 
                     Sku.Create("SKU-001"), 
-                    10, 
+                    command.ReceivedQuantity, 
                     command.UserId, 
                     command.StationId);
                 
-                // Execute Domain Logic
+                // DETECCIÓN DE OVERAGE
+                if (command.ReceivedQuantity > command.ExpectedQuantity)
+                {
+                    lpn.Quarantine(
+                        $"OVERAGE_PENDING_APPROVAL: Expected {command.ExpectedQuantity}, Received {command.ReceivedQuantity}", 
+                        command.UserId, 
+                        command.StationId);
+                }
+                else if (command.ReceivedQuantity < command.ExpectedQuantity)
+                {
+                    // Lógica de Shortage: Emitir evento especializado
+                    // En una app real, esto podría disparar un flujo en el ERP/Odoo
+                    var shortageEvent = new Victoria.Inventory.Domain.Events.ReceiptClosedWithShortage(
+                        command.TenantId,
+                        command.OrderId,
+                        "SKU-001",
+                        command.ExpectedQuantity,
+                        command.ReceivedQuantity,
+                        DateTime.UtcNow,
+                        command.UserId,
+                        command.StationId
+                    );
+                    
+                    // Aquí podríamos persistir este evento por separado o añadirlo al stream
+                    // Por ahora, solo cumplimos con la lógica de negocio técnica
+                }
+                
                 lpn.Receive(command.OrderId, command.UserId, command.StationId);
 
                 // Persist Events

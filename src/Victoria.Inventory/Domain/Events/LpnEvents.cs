@@ -110,4 +110,25 @@ namespace Victoria.Inventory.Domain.Events
         string CreatedBy,
         string StationId
     ) : IDomainEvent;
+    public record ReceiptClosedWithShortage(
+        string TenantId,
+        string OrderId,
+        string Sku,
+        int RequestedQuantity,
+        int ReceivedQuantity,
+        DateTime OccurredOn,
+        string CreatedBy,
+        string StationId
+    ) : IDomainEvent;
+
+    public record PickShortageDetected(
+        string TenantId,
+        string LpnId,
+        string OrderId,
+        int ExpectedQuantity,
+        int FoundQuantity,
+        DateTime OccurredOn,
+        string CreatedBy,
+        string StationId
+    ) : IDomainEvent;
 }

@@ -12,6 +12,7 @@ namespace Victoria.Inventory.Application.Commands
     {
         public string TenantId { get; set; } = string.Empty;
         public string LpnId { get; set; } = string.Empty;
+        public int FoundQuantity { get; set; }
         public string UserId { get; set; } = string.Empty;
         public string StationId { get; set; } = string.Empty;
     }
@@ -54,7 +55,30 @@ namespace Victoria.Inventory.Application.Commands
                 lpn.Allocate("ORDER-001", Sku.Create("SKU-001"), "SYS", "SYS");
                 lpn.ClearChanges();
 
-                // 2. Lógica de Picking
+                // 2. Lógica de Picking con Shortage
+                int expected = 10; // En real, vendría de la asignación del LPN
+                if (command.FoundQuantity < expected)
+                {
+                    // Reportar Faltante
+                    var shortageEvent = new Victoria.Inventory.Domain.Events.PickShortageDetected(
+                        command.TenantId,
+                        command.LpnId,
+                        "ORDER-001",
+                        expected,
+                        command.FoundQuantity,
+                        DateTime.UtcNow,
+                        command.UserId,
+                        command.StationId
+                    );
+                    
+                    // Ajustar saldo del LPN inmediatamente para evitar nuevos picking erróneos
+                    lpn.AdjustQuantity(command.FoundQuantity, "PICK_SHORTAGE_DETECTED", command.UserId, command.StationId);
+                    
+                    // Trigger automático de AUDITORÍA (Cycle Count Task)
+                    // En una app real: _mediator.Send(new CreateCycleCountTaskCommand(...));
+                    Console.WriteLine($"[URGENT] CycleCountTask created for Location {lpn.CurrentLocation} due to Pick Shortage.");
+                }
+
                 lpn.Pick(command.UserId, command.StationId);
 
                 // 3. Persistencia
