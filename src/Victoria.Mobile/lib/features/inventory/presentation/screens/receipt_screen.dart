@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/network/api_client.dart';
 import '../../data/repositories/inventory_repository_impl.dart';
 
 // Simple Provider for the repository
-final inventoryRepositoryProvider = Provider((ref) => InventoryRepositoryImpl());
+final inventoryRepositoryProvider = Provider((ref) => InventoryRepositoryImpl(ApiClient()));
 
 // State Provider for status
 final receiptStatusProvider = StateProvider<String?>((ref) => null);

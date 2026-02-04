@@ -24,6 +24,11 @@ dependencies:
   # Hardware Preparation (Fase 5 Req)
   flutter_blue_plus: ^1.30.0 # Bluetooth
   sqflite: ^2.3.0 # Local Config/Storage
+  flutter_bloc: ^9.1.1
+  flutter_secure_storage: ^10.0.0
+  vibration: ^3.1.5
+  audioplayers: ^6.5.1
+  path_provider: ^2.1.5
 
 dev_dependencies:
   flutter_test:
