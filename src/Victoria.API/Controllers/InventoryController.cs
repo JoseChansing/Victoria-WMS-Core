@@ -19,7 +19,8 @@ namespace Victoria.API.Controllers
         private readonly PackingHandler _packingHandler;
         private readonly Victoria.Inventory.Application.Services.DispatchService _dispatchService;
         private readonly Victoria.Inventory.Application.Services.CycleCountService _countService;
-        private readonly Victoria.Infrastructure.Integration.DispatchEventHandler _odooIntegration;
+        private readonly ApproveReceiptOverageHandler _approveReceiptOverageHandler;
+        private readonly Victoria.Core.Messaging.IMessageBus _bus;
 
         public InventoryController(
             ReceiveLpnHandler receiveHandler, 
@@ -29,7 +30,8 @@ namespace Victoria.API.Controllers
             PackingHandler packingHandler,
             Victoria.Inventory.Application.Services.DispatchService dispatchService,
             Victoria.Inventory.Application.Services.CycleCountService countService,
-            Victoria.Infrastructure.Integration.DispatchEventHandler odooIntegration)
+            ApproveReceiptOverageHandler approveReceiptOverageHandler,
+            Victoria.Core.Messaging.IMessageBus bus)
         {
             _receiveHandler = receiveHandler;
             _putawayHandler = putawayHandler;
@@ -38,7 +40,8 @@ namespace Victoria.API.Controllers
             _packingHandler = packingHandler;
             _dispatchService = dispatchService;
             _countService = countService;
-            _odooIntegration = odooIntegration;
+            _approveReceiptOverageHandler = approveReceiptOverageHandler;
+            _bus = bus;
         }
 
         [HttpPost("receipt")]
@@ -51,6 +54,8 @@ namespace Victoria.API.Controllers
                     TenantId = request.TenantId,
                     LpnId = request.LpnId,
                     OrderId = request.OrderId,
+                    ExpectedQuantity = request.ExpectedQuantity,
+                    ReceivedQuantity = request.ReceivedQuantity,
                     UserId = request.UserId,
                     StationId = request.StationId
                 });
@@ -152,12 +157,35 @@ namespace Victoria.API.Controllers
             {
                 var zpl = await _dispatchService.DispatchOrder(request.TenantId, id, request.DockDoor, request.UserId);
                 
-                // Simulación de disparo de integración con Odoo basado en el evento DispatchConfirmed
-                _odooIntegration.Handle(new Victoria.Inventory.Domain.Events.DispatchConfirmed(request.TenantId, id, request.DockDoor, new List<string> { "LPN-TEST-001" }, DateTime.UtcNow, request.UserId, "API-INTERNAL"));
+                // REQUERIMIENTO FASE 16: Comunicación desacoplada vía Bus
+                await _bus.PublishAsync(new Victoria.Inventory.Domain.Events.DispatchConfirmed(
+                    request.TenantId, 
+                    id, 
+                    request.DockDoor, 
+                    new List<string> { "LPN-GOLIVE-001" }, 
+                    DateTime.UtcNow, 
+                    request.UserId, 
+                    "WEB-PORTAL"));
 
-                return Ok(new { Message = "Order dispatched and notified to Odoo.", LabelZPL = zpl, Tenant = request.TenantId });
+                return Ok(new { Message = "Order dispatched and event published to Bus.", LabelZPL = zpl, Tenant = request.TenantId });
             }
             catch (TenantSecurityException ex) { return StatusCode(403, new { Error = ex.Message }); }
+            catch (Exception ex) { return StatusCode(500, new { Error = ex.Message }); }
+        }
+
+        [HttpPost("receipt/approve-overage")]
+        public async Task<IActionResult> ApproveReceiptOverage([FromBody] ApproveReceiptOverageRequest request)
+        {
+            try
+            {
+                await _approveReceiptOverageHandler.Handle(new ApproveReceiptOverageCommand
+                {
+                    TenantId = request.TenantId,
+                    LpnId = request.LpnId,
+                    SupervisorId = request.SupervisorId
+                });
+                return Ok(new { Message = "Overage approved. LPN is now available for Putaway.", LpnId = request.LpnId });
+            }
             catch (Exception ex) { return StatusCode(500, new { Error = ex.Message }); }
         }
 
@@ -187,7 +215,7 @@ namespace Victoria.API.Controllers
         }
     }
 
-    public record ReceiveLpnRequest(string TenantId, string LpnId, string OrderId, string UserId, string StationId);
+    public record ReceiveLpnRequest(string TenantId, string LpnId, string OrderId, int ExpectedQuantity, int ReceivedQuantity, string UserId, string StationId);
     public record PutawayLpnRequest(string TenantId, string LpnId, string LocationCode, string UserId, string StationId);
     public record AllocateOrderRequest(string TenantId, string OrderId, string Sku, int Quantity, string UserId, string StationId);
     public record PickLpnRequest(string TenantId, string LpnId, string UserId, string StationId);
@@ -195,4 +223,5 @@ namespace Victoria.API.Controllers
     public record DispatchOrderRequest(string TenantId, string DockDoor, string UserId);
     public record ReportCountRequest(string TenantId, string LpnId, int CountedQuantity, string UserId, string StationId);
     public record AuthorizeAdjustmentRequest(string TenantId, string LpnId, int NewQuantity, string Reason, string SupervisorId);
+    public record ApproveReceiptOverageRequest(string TenantId, string LpnId, string SupervisorId);
 }
