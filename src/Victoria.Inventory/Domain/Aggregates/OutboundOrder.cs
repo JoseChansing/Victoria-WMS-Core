@@ -9,6 +9,10 @@ namespace Victoria.Inventory.Domain.Aggregates
     {
         public string OrderId { get; }
         public string TenantId { get; }
+        public string? ExternalId { get; private set; }
+        public bool HasSyncError { get; private set; }
+        public string? SyncErrorMessage { get; private set; }
+        
         private readonly List<SalesOrderLine> _lines = new List<SalesOrderLine>();
         public IReadOnlyCollection<SalesOrderLine> Lines => _lines.AsReadOnly();
 
@@ -16,6 +20,17 @@ namespace Victoria.Inventory.Domain.Aggregates
         {
             TenantId = tenantId;
             OrderId = orderId;
+        }
+
+        public void SetExternalId(string externalId)
+        {
+            ExternalId = externalId;
+        }
+
+        public void MarkSyncError(string message)
+        {
+            HasSyncError = true;
+            SyncErrorMessage = message;
         }
 
         public void AddLine(string lineId, string sku, int qty)

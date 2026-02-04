@@ -36,11 +36,15 @@ builder.Services.AddScoped<PickLpnHandler>();
 builder.Services.AddScoped<PackingHandler>();
 builder.Services.AddScoped<Victoria.Inventory.Application.Services.DispatchService>();
 
-// 5. Odoo Integration Mix (ACL)
-builder.Services.AddSingleton<Victoria.Core.Messaging.IMessageBus, Victoria.Core.Messaging.InMemoryMessageBus>();
+// 5. Odoo Integration Mix (ACL & RPC)
+builder.Services.AddHttpClient<Victoria.Infrastructure.Integration.Odoo.IOdooRpcClient, Victoria.Infrastructure.Integration.Odoo.OdooRpcClient>();
 builder.Services.AddScoped<Victoria.Infrastructure.Integration.Odoo.ProductSyncService>();
 builder.Services.AddScoped<Victoria.Infrastructure.Integration.Odoo.InboundOrderSyncService>();
 builder.Services.AddScoped<Victoria.Infrastructure.Integration.Odoo.OdooFeedbackService>();
+builder.Services.AddScoped<Victoria.Infrastructure.Integration.Odoo.OdooFeedbackConsumer>();
+
+// Background Workers
+builder.Services.AddHostedService<Victoria.Infrastructure.Integration.Odoo.OdooPollingService>();
 
 builder.Services.AddControllers();
 
