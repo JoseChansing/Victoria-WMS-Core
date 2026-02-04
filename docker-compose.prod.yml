@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  victoria-api:
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/victoria-api:v1.0
+    container_name: victoria-api
+    restart: unless-stopped
+    ports:
+      - "5000:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - POSTGRES_CONNECTION=Host=${RDS_HOSTNAME};Database=${DB_NAME};Username=${DB_USER};Password=${DB_PASSWORD}
+      - REDIS_CONNECTION=${REDIS_HOSTNAME}:6379
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  victoria-worker:
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/victoria-api:v1.0 # Usamos la misma imagen si es el mismo binario
+    container_name: victoria-worker
+    command: ["dotnet", "Victoria.API.dll"] # Ajustar si el worker es un entrypoint diferente
+    restart: unless-stopped
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - POSTGRES_CONNECTION=Host=${RDS_HOSTNAME};Database=${DB_NAME};Username=${DB_USER};Password=${DB_PASSWORD}
+      - REDIS_CONNECTION=${REDIS_HOSTNAME}:6379
+
+  nginx-proxy:
+    image: nginx:alpine
+    container_name: nginx-proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt
+    depends_on:
+      - victoria-api
