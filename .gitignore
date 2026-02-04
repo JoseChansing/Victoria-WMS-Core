@@ -1,0 +1,36 @@
+# .NET
+[Bb]in/
+[Oo]bj/
+[Tt]emp/
+*.swp
+*.lock
+*.user
+*.userosscache
+*.sln.docstates
+
+# Visual Studio Code
+.vscode/
+.history/
+
+# Visual Studio
+.vs/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.userosscache
+*.suo
+*.userprefs
+
+# Docker
+.docker/
+
+# User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# OS files
+.DS_Store
+Thumbs.db

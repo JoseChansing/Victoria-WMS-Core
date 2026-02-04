@@ -1,0 +1,33 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: victoria-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: vicky_admin
+      POSTGRES_PASSWORD: vicky_password
+      POSTGRES_DB: victoria_wms
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: victoria-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --save 60 1 --loglevel warning
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: victoria-pgadmin
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@victoria.com
+      PGADMIN_DEFAULT_PASSWORD: admin_password
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
