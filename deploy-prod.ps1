@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-Write-Host "INICIANDO DESPLIEGUE A PRODUCCION (Base64 Safe Mode)" -ForegroundColor Cyan
+Write-Host "INICIANDO DESPLIEGUE A PRODUCCION (Remoto/Limpio)" -ForegroundColor Cyan
 
 # Variables
 $EC2_HOST = "ec2-user@3.14.182.244"
@@ -18,8 +18,9 @@ aws s3 sync dist/ s3://app.victoriawms.dev --delete --region us-east-2
 aws cloudfront create-invalidation --distribution-id E1IAC81MX1E6UM --paths "/*"
 Set-Location ../..
 
-# 2. Backend Package
+# 2. Backend Package (Usando Git Archive para asegurar integridad del código confirmado)
 Write-Host "2. Backend Package..." -ForegroundColor Yellow
+if (Test-Path deploy-package.zip) { Remove-Item deploy-package.zip }
 git archive --format=zip HEAD -o deploy-package.zip
 
 Write-Host "Subiendo archivos a EC2..." -ForegroundColor Yellow
@@ -31,31 +32,25 @@ scp -i $KEY_PATH -o StrictHostKeyChecking=no deploy-package.zip $DestPackage
 scp -i $KEY_PATH -o StrictHostKeyChecking=no src/Victoria.Infrastructure/Persistence/Scripts/04_InboundOrders.sql $DestSql04
 scp -i $KEY_PATH -o StrictHostKeyChecking=no src/Victoria.Infrastructure/Persistence/Scripts/05_Products.sql $DestSql05
 
-# 3. Remote Execution (Base64 Encoded to prevent CRLF issues)
+# 3. Remote Execution
 Write-Host "3. Remote Execution..." -ForegroundColor Yellow
 
-# Script bash que se ejecutará en remoto.
-# Usamos `docker exec` para correr psql dentro del contenedor 'db' ya que el host no tiene psql.
 $RemoteScript = @"
 set -e
-echo '>>> Unzipping...'
-unzip -o deploy-package.zip -d victoria-wms
-cd victoria-wms
+echo '>>> Limpiando directorio...'
+rm -rf ~/victoria-wms-tmp
+mkdir -p ~/victoria-wms-tmp
+unzip -o ~/deploy-package.zip -d ~/victoria-wms-tmp
+cd ~/victoria-wms-tmp
 
-echo '>>> Rebuild Docker...'
-# Usamos docker compose standard (v2)
-docker compose -f docker-compose.prod.yml down
+echo '>>> Configurando .env...'
+cp .env.production .env
+
+echo '>>> Rebuild Docker (Construyendo en servidor)...'
 docker compose -f docker-compose.prod.yml up -d --build
 
 echo '>>> DB Migration (via Docker)...'
-sleep 15
-# Copiamos scripts al contenedor primero o usamos input redirection
-# Asumimos que el servicio de db se llama 'db' o 'victoria-db' en el compose. Revisando logs anteriores, parece ser parte del stack.
-# Usamos el nombre del contenedor generado o el servicio.
-# Vamos a enviar el contenido del archivo via stdin a docker exec.
-
-# Usamos un contenedor efimero de postgres para ejecutar los scripts contra RDS
-# Montamos los archivos del host al contenedor
+sleep 30
 docker run --rm \
   -v /home/ec2-user/04_InboundOrders.sql:/tmp/04.sql \
   -v /home/ec2-user/05_Products.sql:/tmp/05.sql \
@@ -63,18 +58,20 @@ docker run --rm \
   postgres:15-alpine \
   sh -c 'psql -h victoria-db.ct8iwqe86oz4.us-east-2.rds.amazonaws.com -U vicky_admin -d victoria_wms -f /tmp/04.sql && psql -h victoria-db.ct8iwqe86oz4.us-east-2.rds.amazonaws.com -U vicky_admin -d victoria_wms -f /tmp/05.sql'
 
-echo '>>> Cleanup...'
-rm ~/deploy-package.zip
+echo '>>> [VERIFICACION] Estado de la Base de Datos:'
+docker run --rm \
+  -e PGPASSWORD=vicky_password \
+  postgres:15-alpine \
+  sh -c 'psql -h victoria-db.ct8iwqe86oz4.us-east-2.rds.amazonaws.com -U vicky_admin -d victoria_wms -c "SELECT count(*) as product_count FROM \"Products\"; SELECT count(*) as inbound_count FROM \"InboundOrders\";"'
+
+echo '>>> Finalizado.'
 "@
 
-# IMPORTANTE: Reemplazar CRLF (Windows) por LF (Linux) antes de codificar
+# Limpiar CRLF
 $RemoteScript = $RemoteScript -replace "`r", ""
-
-# Codificar a Base64 para evitar problemas de parsing en SSH
 $ScriptBytes = [System.Text.Encoding]::UTF8.GetBytes($RemoteScript)
 $Base64Script = [System.Convert]::ToBase64String($ScriptBytes)
 
-# Ejecutar decodificando en el destino
 ssh -i $KEY_PATH -o StrictHostKeyChecking=no $EC2_HOST "echo $Base64Script | base64 -d | bash"
 
-Write-Host "DESPLIEGUE EXITOSO" -ForegroundColor Green
+Write-Host "DESPLIEGUE FINALIZADO" -ForegroundColor Green
