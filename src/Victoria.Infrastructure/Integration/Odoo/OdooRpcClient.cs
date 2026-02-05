@@ -19,15 +19,17 @@ namespace Victoria.Infrastructure.Integration.Odoo
     public class OdooRpcClient : IOdooRpcClient
     {
         private readonly HttpClient _httpClient;
+        private readonly ILogger<OdooRpcClient> _logger;
         private readonly string _url;
         private readonly string _db;
         private readonly string _user;
         private readonly string _apiKey;
         private int _uid = -1;
 
-        public OdooRpcClient(HttpClient httpClient, IConfiguration config)
+        public OdooRpcClient(HttpClient httpClient, IConfiguration config, ILogger<OdooRpcClient> logger)
         {
             _httpClient = httpClient;
+            _logger = logger;
             _url = config["Odoo:Url"] ?? throw new ArgumentNullException("Odoo:Url");
             _db = config["Odoo:Db"] ?? throw new ArgumentNullException("Odoo:Db");
             _user = config["Odoo:User"] ?? throw new ArgumentNullException("Odoo:User");
