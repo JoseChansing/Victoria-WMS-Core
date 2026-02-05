@@ -140,9 +140,15 @@ namespace Victoria.Infrastructure.Integration.Odoo
                         {
                             try {
                                 if (prop.PropertyType == typeof(int) || prop.PropertyType == typeof(Int32))
-                                    prop.SetValue(item, int.Parse(finalValue.ToString()!));
+                                {
+                                    if (int.TryParse(finalValue.ToString(), out int intVal))
+                                        prop.SetValue(item, intVal);
+                                }
                                 else if (prop.PropertyType == typeof(double))
-                                    prop.SetValue(item, double.Parse(finalValue.ToString()!));
+                                {
+                                    if (double.TryParse(finalValue.ToString(), out double dblVal))
+                                        prop.SetValue(item, dblVal);
+                                }
                                 else
                                     prop.SetValue(item, Convert.ChangeType(finalValue, prop.PropertyType));
                             } catch { /* Skip mapping errors for robustness */ }
