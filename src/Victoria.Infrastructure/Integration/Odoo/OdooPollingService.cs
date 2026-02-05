@@ -67,37 +67,41 @@ namespace Victoria.Infrastructure.Integration.Odoo
         {
             _logger.LogInformation("[POLLING] Syncing Products for Tenant {Tenant} (Odoo Company {Id})", tenantId, odooCompanyId);
             
+            // Flexibilizamos el filtro: Solo active=true para asegurar que traemos algo
             var domain = new object[][] { 
-                new object[] { "active", "=", true }, 
-                new object[] { "detailed_type", "=", "product" },
+                new object[] { "active", "=", true },
                 new object[] { "company_id", "=", odooCompanyId }
             };
 
             var fields = new string[] { 
                 "id", "display_name", "default_code", "weight", 
-                "image_1920", "image_128", "product_tmpl_id" 
+                "image_128", "company_id" 
             };
 
             var products = await _odooClient.SearchAndReadAsync<OdooProductDto>("product.product", domain, fields);
+            _logger.LogInformation("[POLLING] Odoo returned {Count} products for Company {Id}", products.Count, odooCompanyId);
             
             foreach (var p in products)
             {
-                p.Company_Id = odooCompanyId;
+                // Aseguramos que el company_id se propague si el mapeo RPC falló
+                if (p.Company_Id == 0) p.Company_Id = odooCompanyId;
                 await _productSync.SyncProduct(p);
             }
         }
 
         private async Task SyncOrders()
         {
-            _logger.LogInformation("[POLLING] Syncing Ready Pickings (Incoming/Outgoing)");
+            _logger.LogInformation("[POLLING] Syncing pickings...");
 
+            // Flexibilizamos estados: assigned, confirmed, waiting
             var domain = new object[][] { 
-                new object[] { "state", "=", "assigned" },
+                new object[] { "state", "in", new string[] { "assigned", "confirmed", "waiting" } },
                 new object[] { "picking_type_code", "in", new string[] { "incoming", "outgoing" } }
             };
 
             var fields = new string[] { "name", "picking_type_code", "company_id", "id" };
             var pickings = await _odooClient.SearchAndReadAsync<OdooOrderDto>("stock.picking", domain, fields);
+            _logger.LogInformation("[POLLING] Odoo returned {Count} pickings", pickings.Count);
             
             foreach (var pick in pickings)
             {
