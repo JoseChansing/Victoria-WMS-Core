@@ -24,6 +24,7 @@ namespace Victoria.Infrastructure.Integration.Odoo
     public class InboundOrderSyncService
     {
         private readonly string _connectionString;
+        private readonly ILogger<InboundOrderSyncService> _logger;
         private static readonly Dictionary<int, string> TenantMapping = new()
         {
             { 1, "PERFECTPTY" }, { 2, "NATSUKI" }, { 3, "PDM" }, { 4, "FILTROS" }
