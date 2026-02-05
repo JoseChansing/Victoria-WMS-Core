@@ -37,14 +37,20 @@ Write-Host "3. Remote Execution..." -ForegroundColor Yellow
 
 $RemoteScript = @"
 set -e
-echo '>>> Limpiando directorio...'
-rm -rf ~/victoria-wms-tmp
-mkdir -p ~/victoria-wms-tmp
-unzip -o ~/deploy-package.zip -d ~/victoria-wms-tmp
-cd ~/victoria-wms-tmp
+echo '>>> Unzipping...'
+mkdir -p ~/victoria-wms
+unzip -o ~/deploy-package.zip -d ~/victoria-wms
+cd ~/victoria-wms
 
 echo '>>> Configurando .env...'
-cp .env.production .env
+if [ -f .env.production ]; then
+    cp .env.production .env
+else
+    echo "WARNING: .env.production not found"
+fi
+
+echo '>>> Limpiando contenedores previos para evitar conflictos...'
+docker rm -f victoria-api victoria-worker nginx-proxy || true
 
 echo '>>> Rebuild Docker (Construyendo en servidor)...'
 docker compose -f docker-compose.prod.yml up -d --build
