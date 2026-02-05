@@ -30,10 +30,14 @@ namespace Victoria.Infrastructure.Integration.Odoo
         {
             _httpClient = httpClient;
             _logger = logger;
-            _url = config["Odoo:Url"] ?? throw new ArgumentNullException("Odoo:Url");
-            _db = config["Odoo:Db"] ?? throw new ArgumentNullException("Odoo:Db");
-            _user = config["Odoo:User"] ?? throw new ArgumentNullException("Odoo:User");
-            _apiKey = config["Odoo:ApiKey"] ?? throw new ArgumentNullException("Odoo:ApiKey");
+            _url = (config["Odoo:Url"] ?? "").Trim();
+            _db = (config["Odoo:Db"] ?? "").Trim();
+            _user = (config["Odoo:User"] ?? "").Trim();
+            _apiKey = (config["Odoo:ApiKey"] ?? "").Trim();
+
+            if (string.IsNullOrEmpty(_url)) throw new ArgumentNullException("Odoo:Url");
+            
+            _logger.LogInformation("[ODOO] Client initialized for {Url} | DB: {Db} | User: {User}", _url, _db, _user);
         }
 
         public async Task<int> AuthenticateAsync()
@@ -60,6 +64,8 @@ namespace Victoria.Infrastructure.Integration.Odoo
         public async Task<List<T>> SearchAndReadAsync<T>(string model, object[][] domain, string[] fields) where T : new()
         {
             int uid = await AuthenticateAsync();
+            if (uid == -1) 
+                throw new Exception("Odoo Login failed. Check credentials in .env.production");
             
             var domainXml = BuildDomainXml(domain);
             var fieldsXml = BuildFieldsXml(fields);
