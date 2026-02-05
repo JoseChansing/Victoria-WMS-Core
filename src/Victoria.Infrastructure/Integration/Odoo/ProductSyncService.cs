@@ -44,7 +44,8 @@ namespace Victoria.Infrastructure.Integration.Odoo
                 return;
 
             string skuCode = (odooProduct.Default_Code ?? "").ToUpper().Trim();
-            if (string.IsNullOrEmpty(skuCode)) return;
+            if (string.IsNullOrEmpty(skuCode)) 
+                skuCode = $"ODOO-{odooProduct.Id}"; // Fallback para que los productos aparezcan
 
             // LÓGICA DE IMAGEN (CASCADA)
             string imageSource = "null";
