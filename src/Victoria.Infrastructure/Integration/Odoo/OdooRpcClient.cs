@@ -114,16 +114,37 @@ namespace Victoria.Infrastructure.Integration.Odoo
                 {
                     var name = member.SelectSingleNode("name")?.InnerText;
                     var valueNode = member.SelectSingleNode("value");
+                    if (name == null || valueNode == null) continue;
                     
                     var prop = Array.Find(props, p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
-                    if (prop != null && valueNode != null)
+                    if (prop != null)
                     {
-                        var val = valueNode.FirstChild?.InnerText;
-                        if (val != null)
+                        object? finalValue = null;
+                        
+                        // Handler multidimensional values (many2one in Odoo returns [id, name])
+                        var innerArray = valueNode.SelectSingleNode("array/data");
+                        if (innerArray != null)
+                        {
+                            // If property is int, take the first element (the ID)
+                            var firstVal = innerArray.SelectSingleNode("value/*");
+                            if (firstVal != null) finalValue = firstVal.InnerText;
+                        }
+                        else
+                        {
+                            // Standard value (int, string, boolean)
+                            finalValue = valueNode.FirstChild?.InnerText;
+                        }
+
+                        if (finalValue != null)
                         {
                             try {
-                                prop.SetValue(item, Convert.ChangeType(val, prop.PropertyType));
-                            } catch { /* Skip mapping errors for demo simplicity */ }
+                                if (prop.PropertyType == typeof(int) || prop.PropertyType == typeof(Int32))
+                                    prop.SetValue(item, int.Parse(finalValue.ToString()!));
+                                else if (prop.PropertyType == typeof(double))
+                                    prop.SetValue(item, double.Parse(finalValue.ToString()!));
+                                else
+                                    prop.SetValue(item, Convert.ChangeType(finalValue, prop.PropertyType));
+                            } catch { /* Skip mapping errors for robustness */ }
                         }
                     }
                 }
