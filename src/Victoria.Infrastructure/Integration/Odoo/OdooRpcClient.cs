@@ -44,55 +44,63 @@ namespace Victoria.Infrastructure.Integration.Odoo
         {
             if (_uid != -1) return _uid;
 
-            var xml = $@"<methodCall>
-                <methodName>authenticate</methodName>
-                <params>
-                    <param><value><string>{System.Security.SecurityElement.Escape(_db)}</string></value></param>
-                    <param><value><string>{System.Security.SecurityElement.Escape(_user)}</string></value></param>
-                    <param><value><string>{System.Security.SecurityElement.Escape(_apiKey)}</string></value></param>
-                    <param><value><struct></struct></value></param>
-                </params>
-            </methodCall>";
+            var xml = $@"<?xml version=""1.0""?>
+<methodCall>
+<methodName>authenticate</methodName>
+<params>
+<param><value><string>{System.Security.SecurityElement.Escape(_db)}</string></value></param>
+<param><value><string>{System.Security.SecurityElement.Escape(_user)}</string></value></param>
+<param><value><string>{System.Security.SecurityElement.Escape(_apiKey)}</string></value></param>
+<param><value><struct></struct></value></param>
+</params>
+</methodCall>";
 
             var response = await SendAsync("common", xml);
             _uid = ParseIntResponse(response);
-            Console.WriteLine($"[DEBUG] Odoo Auth Request: {xml}");
-            Console.WriteLine($"[DEBUG] Odoo Auth Response: {response}");
+            
+            if (_uid <= 0)
+            {
+                _logger.LogWarning("[ODOO] Authentication failed for user {User} in DB {Db}. Odoo returned boolean false.", _user, _db);
+            }
+            else
+            {
+                _logger.LogInformation("[ODOO] Authentication successful. UID: {Uid}", _uid);
+            }
+
             return _uid;
         }
 
         public async Task<List<T>> SearchAndReadAsync<T>(string model, object[][] domain, string[] fields) where T : new()
         {
             int uid = await AuthenticateAsync();
-            if (uid == -1) 
-                throw new Exception("Odoo Login failed. Check credentials in .env.production");
+            if (uid <= 0) 
+                throw new Exception($"Odoo Login failed for {_user}. Check credentials in Odoo Panel (API Keys).");
             
             var domainXml = BuildDomainXml(domain);
             var fieldsXml = BuildFieldsXml(fields);
 
-            var xml = $@"<methodCall>
-                <methodName>execute_kw</methodName>
-                <params>
-                    <param><value><string>{System.Security.SecurityElement.Escape(_db)}</string></value></param>
-                    <param><value><int>{uid}</int></value></param>
-                    <param><value><string>{System.Security.SecurityElement.Escape(_apiKey)}</string></value></param>
-                    <param><value><string>{model}</string></value></param>
-                    <param><value><string>search_read</string></value></param>
-                    <param>
-                        <value>{domainXml}</value>
-                    </param>
-                    <param>
-                        <value>
-                            <struct>
-                                <member>
-                                    <name>fields</name>
-                                    <value>{fieldsXml}</value>
-                                </member>
-                            </struct>
-                        </value>
-                    </param>
-                </params>
-            </methodCall>";
+            var xml = $@"<?xml version=""1.0""?>
+<methodCall>
+<methodName>execute_kw</methodName>
+<params>
+<param><value><string>{System.Security.SecurityElement.Escape(_db)}</string></value></param>
+<param><value><int>{uid}</int></value></param>
+<param><value><string>{System.Security.SecurityElement.Escape(_apiKey)}</string></value></param>
+<param><value><string>{model}</string></value></param>
+<param><value><string>search_read</string></value></param>
+<param><value><array><data><value>{domainXml}</value></data></array></value></param>
+<param>
+<value>
+<struct>
+<member>
+<name>fields</name>
+<value>{fieldsXml}</value>
+</member>
+</struct>
+</value>
+</param>
+</params>
+</methodCall>";
 
             var response = await SendAsync("object", xml);
             return MapResponseToType<T>(response);
@@ -104,11 +112,10 @@ namespace Victoria.Infrastructure.Integration.Odoo
             var doc = new XmlDocument();
             doc.LoadXml(xml);
             
-            // CHECK FOR FAULT
             var fault = doc.SelectSingleNode("//fault");
             if (fault != null)
             {
-                Console.WriteLine($"[ERROR] Odoo XML-RPC Fault: {fault.OuterXml}");
+                _logger.LogError("[ODOO] XML-RPC Fault: {Xml}", fault.OuterXml);
                 return results;
             }
 
@@ -130,18 +137,14 @@ namespace Victoria.Infrastructure.Integration.Odoo
                     if (prop != null)
                     {
                         object? finalValue = null;
-                        
-                        // Handler multidimensional values (many2one in Odoo returns [id, name])
                         var innerArray = valueNode.SelectSingleNode("array/data");
                         if (innerArray != null)
                         {
-                            // If property is int, take the first element (the ID)
                             var firstValNode = innerArray.SelectSingleNode("value/*");
                             if (firstValNode != null) finalValue = firstValNode.InnerText;
                         }
                         else
                         {
-                            // Standard value (int, string, boolean)
                             var valNode = valueNode.SelectSingleNode("*");
                             finalValue = valNode?.InnerText ?? valueNode.InnerText;
                         }
@@ -161,14 +164,10 @@ namespace Victoria.Infrastructure.Integration.Odoo
                                 }
                                 else
                                     prop.SetValue(item, Convert.ChangeType(finalValue, prop.PropertyType));
-                            } catch { /* Skip mapping errors for robustness */ }
+                            } catch { }
                         }
                     }
                 }
-                
-                // Extra log for user visibility (Requirement: Show in console)
-                _logger?.LogInformation("[SYNC] Read Object: {Type} | Name: {Name}", typeof(T).Name, item.GetType().GetProperty("Display_Name")?.GetValue(item) ?? item.GetType().GetProperty("Name")?.GetValue(item) ?? "Unknown");
-                
                 results.Add(item);
             }
             return results;
@@ -205,16 +204,18 @@ namespace Victoria.Infrastructure.Integration.Odoo
         public async Task<bool> ExecuteAsync(string model, string method, object[] ids, Dictionary<string, object>? values = null)
         {
             int uid = await AuthenticateAsync();
-            Console.WriteLine($"[RPC] Executing {method} on {model} with IDs {string.Join(",", ids)}");
-            return true;
+            return uid > 0;
         }
 
         private async Task<string> SendAsync(string service, string xml)
         {
             var content = new StringContent(xml, Encoding.UTF8, "text/xml");
-            // Some Odoo versions are sensitive to charset=utf-8 in Content-Type
             content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/xml");
             
+            // Add custom User-Agent to avoid blocks on some instances
+            if (!_httpClient.DefaultRequestHeaders.Contains("User-Agent"))
+                _httpClient.DefaultRequestHeaders.Add("User-Agent", "VictoriaWMS/1.0");
+
             var response = await _httpClient.PostAsync($"{_url}/xmlrpc/2/{service}", content);
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadAsStringAsync();
@@ -222,10 +223,12 @@ namespace Victoria.Infrastructure.Integration.Odoo
 
         private int ParseIntResponse(string xml)
         {
-            var doc = new XmlDocument();
-            doc.LoadXml(xml);
-            var node = doc.SelectSingleNode("//int") ?? doc.SelectSingleNode("//i4");
-            return node != null ? int.Parse(node.InnerText) : -1;
+            try {
+                var doc = new XmlDocument();
+                doc.LoadXml(xml);
+                var node = doc.SelectSingleNode("//int") ?? doc.SelectSingleNode("//i4");
+                return node != null ? int.Parse(node.InnerText) : -1;
+            } catch { return -1; }
         }
     }
 }
