@@ -8,8 +8,8 @@ namespace Victoria.Infrastructure.Integration.Odoo
 {
     public class OdooOrderLineDto
     {
-        public string Product_Id { get; set; } = string.Empty;
-        public int Product_Uom_Qty { get; set; }
+        public int Product_Id { get; set; }
+        public double Product_Uom_Qty { get; set; }
     }
 
     public class OdooOrderDto
@@ -52,8 +52,8 @@ namespace Victoria.Infrastructure.Integration.Odoo
                 TenantId = tenantId,
                 TotalUnits = 0, // Simplificación: las unidades vendrán de las líneas
                 Lines = (odooPicking.Lines ?? new()).Select(l => new InboundLine {
-                    Sku = l.Product_Id,
-                    ExpectedQty = l.Product_Uom_Qty,
+                    Sku = $"ODOO-{l.Product_Id}", // Fallback inicial. Podríamos cruzar con DB Products.
+                    ExpectedQty = (int)l.Product_Uom_Qty,
                     ReceivedQty = 0
                 }).ToList()
             };

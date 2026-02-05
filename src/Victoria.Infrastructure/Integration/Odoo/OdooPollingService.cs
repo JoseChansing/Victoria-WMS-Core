@@ -93,7 +93,6 @@ namespace Victoria.Infrastructure.Integration.Odoo
         {
             _logger.LogInformation("[POLLING] Syncing pickings...");
 
-            // Flexibilizamos estados: assigned, confirmed, waiting
             var domain = new object[][] { 
                 new object[] { "state", "in", new string[] { "assigned", "confirmed", "waiting" } },
                 new object[] { "picking_type_code", "in", new string[] { "incoming", "outgoing" } }
@@ -105,6 +104,18 @@ namespace Victoria.Infrastructure.Integration.Odoo
             
             foreach (var pick in pickings)
             {
+                // REQUERIMIENTO: Cargar líneas (stock.move) para que el frontend vea cantidades
+                var moveDomain = new object[][] { new object[] { "picking_id", "=", pick.Id } };
+                var moveFields = new string[] { "product_id", "product_uom_qty" };
+                
+                try {
+                    var moves = await _odooClient.SearchAndReadAsync<OdooOrderLineDto>("stock.move", moveDomain, moveFields);
+                    pick.Lines = moves;
+                    _logger.LogInformation("[POLLING] Handled picking {Ref} with {Count} lines", pick.Name, moves.Count);
+                } catch (Exception ex) {
+                    _logger.LogError(ex, "Error fetching lines for picking {Ref}", pick.Name);
+                }
+
                 await _orderSync.SyncPicking(pick, pick.Picking_Type_Code);
             }
         }
