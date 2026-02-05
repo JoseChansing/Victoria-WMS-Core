@@ -51,6 +51,7 @@ namespace Victoria.Infrastructure.Integration.Odoo
 
             var response = await SendAsync("common", xml);
             _uid = ParseIntResponse(response);
+            Console.WriteLine($"[DEBUG] Odoo Auth UID: {_uid} | Response: {response}");
             return _uid;
         }
 
@@ -102,13 +103,16 @@ namespace Victoria.Infrastructure.Integration.Odoo
             var doc = new XmlDocument();
             doc.LoadXml(xml);
             
+            // CHECK FOR FAULT
+            var fault = doc.SelectSingleNode("//fault");
+            if (fault != null)
+            {
+                Console.WriteLine($"[ERROR] Odoo XML-RPC Fault: {fault.OuterXml}");
+                return results;
+            }
+
             var structs = doc.SelectNodes("//struct");
             if (structs == null) return results;
-
-            if (structs.Count > 0) 
-            {
-                Console.WriteLine($"[DEBUG] Raw first struct XML: {structs[0]?.OuterXml}");
-            }
 
             foreach (XmlNode s in structs)
             {
@@ -138,7 +142,7 @@ namespace Victoria.Infrastructure.Integration.Odoo
                         {
                             // Standard value (int, string, boolean)
                             var valNode = valueNode.SelectSingleNode("*");
-                            finalValue = valNode?.InnerText;
+                            finalValue = valNode?.InnerText ?? valueNode.InnerText;
                         }
 
                         if (finalValue != null)
@@ -160,6 +164,10 @@ namespace Victoria.Infrastructure.Integration.Odoo
                         }
                     }
                 }
+                
+                // Extra log for user visibility (Requirement: Show in console)
+                _logger?.LogInformation("[SYNC] Read Object: {Type} | Name: {Name}", typeof(T).Name, item.GetType().GetProperty("Display_Name")?.GetValue(item) ?? item.GetType().GetProperty("Name")?.GetValue(item) ?? "Unknown");
+                
                 results.Add(item);
             }
             return results;
