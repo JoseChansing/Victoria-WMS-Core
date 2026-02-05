@@ -85,7 +85,7 @@ namespace Victoria.Infrastructure.Integration.Odoo
                 VALUES (@id, @sku, @name, @tenant, @odooId, @data::jsonb)
                 ON CONFLICT (Id) DO UPDATE SET 
                     Data = EXCLUDED.Data,
-                    Name = EXCLUDED.Name, // Actualizar nombre si cambia en Odoo
+                    Name = EXCLUDED.Name,
                     Sku = EXCLUDED.Sku;";
 
             using var cmd = new NpgsqlCommand(sql, conn);
