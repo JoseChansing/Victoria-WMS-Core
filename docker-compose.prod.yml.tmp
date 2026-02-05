@@ -11,7 +11,6 @@ services:
     env_file: .env
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
-      - ENABLE_ODOO_POLLING=true
     logging:
       driver: "json-file"
       options:

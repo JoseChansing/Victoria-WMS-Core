@@ -12,7 +12,7 @@ namespace Victoria.Infrastructure.Integration.Odoo
     public interface IOdooRpcClient
     {
         Task<int> AuthenticateAsync();
-        Task<object[]> SearchAndReadAsync(string model, object[][] domain, string[] fields);
+        Task<List<T>> SearchAndReadAsync<T>(string model, object[][] domain, string[] fields) where T : new();
         Task<bool> ExecuteAsync(string model, string method, object[] ids, Dictionary<string, object>? values = null);
     }
 
@@ -54,15 +54,110 @@ namespace Victoria.Infrastructure.Integration.Odoo
             return _uid;
         }
 
-        public async Task<object[]> SearchAndReadAsync(string model, object[][] domain, string[] fields)
+        public async Task<List<T>> SearchAndReadAsync<T>(string model, object[][] domain, string[] fields) where T : new()
         {
             int uid = await AuthenticateAsync();
-            // Implementación simplificada de XML-RPC call para search_read
-            // En una implementación real, se construiría el XML dinámicamente para los parámetros.
-            // Para fines del demo, mostramos la estructura.
             
-            Console.WriteLine($"[RPC] Searching model {model} for UID {uid}");
-            return Array.Empty<object>(); // Simulación de respuesta
+            var domainXml = BuildDomainXml(domain);
+            var fieldsXml = BuildFieldsXml(fields);
+
+            var xml = $@"<?xml version='1.0'?>
+            <methodCall>
+                <methodName>execute_kw</methodName>
+                <params>
+                    <param><value><string>{_db}</string></value></param>
+                    <param><value><int>{uid}</int></value></param>
+                    <param><value><string>{_apiKey}</string></value></param>
+                    <param><value><string>{model}</string></value></param>
+                    <param><value><string>search_read</string></value></param>
+                    <param>
+                        <value>
+                            <array>
+                                <data>
+                                    <value>{domainXml}</value>
+                                </data>
+                            </array>
+                        </value>
+                    </param>
+                    <param>
+                        <value>
+                            <struct>
+                                <member>
+                                    <name>fields</name>
+                                    <value>{fieldsXml}</value>
+                                </member>
+                            </struct>
+                        </value>
+                    </param>
+                </params>
+            </methodCall>";
+
+            var response = await SendAsync("object", xml);
+            return MapResponseToType<T>(response);
+        }
+
+        private List<T> MapResponseToType<T>(string xml) where T : new()
+        {
+            var results = new List<T>();
+            var doc = new XmlDocument();
+            doc.LoadXml(xml);
+            
+            var structs = doc.SelectNodes("//struct");
+            if (structs == null) return results;
+
+            foreach (XmlNode s in structs)
+            {
+                var item = new T();
+                var props = typeof(T).GetProperties();
+                
+                foreach (XmlNode member in s.SelectNodes("member"))
+                {
+                    var name = member.SelectSingleNode("name")?.InnerText;
+                    var valueNode = member.SelectSingleNode("value");
+                    
+                    var prop = Array.Find(props, p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+                    if (prop != null && valueNode != null)
+                    {
+                        var val = valueNode.FirstChild?.InnerText;
+                        if (val != null)
+                        {
+                            try {
+                                prop.SetValue(item, Convert.ChangeType(val, prop.PropertyType));
+                            } catch { /* Skip mapping errors for demo simplicity */ }
+                        }
+                    }
+                }
+                results.Add(item);
+            }
+            return results;
+        }
+
+        private string BuildDomainXml(object[][] domain)
+        {
+            if (domain.Length == 0) return "<array><data/></array>";
+            var sb = new StringBuilder("<array><data>");
+            foreach (var criterion in domain)
+            {
+                sb.Append("<value><array><data>");
+                foreach (var part in criterion)
+                {
+                    if (part is string s) sb.Append($"<value><string>{s}</string></value>");
+                    else if (part is bool b) sb.Append($"<value><boolean>{(b ? "1" : "0")}</boolean></value>");
+                    else if (part is string[] arr) sb.Append(BuildFieldsXml(arr));
+                    else sb.Append($"<value><int>{part}</int></value>");
+                }
+                sb.Append("</data></array></value>");
+            }
+            sb.Append("</data></array>");
+            return sb.ToString();
+        }
+
+        private string BuildFieldsXml(string[] fields)
+        {
+            var sb = new StringBuilder("<array><data>");
+            foreach (var field in fields) sb.Append($"<value><string>{field}</string></value>");
+            sb.Append("</data></array>");
+            return sb.ToString();
         }
 
         public async Task<bool> ExecuteAsync(string model, string method, object[] ids, Dictionary<string, object>? values = null)

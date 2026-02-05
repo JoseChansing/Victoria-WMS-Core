@@ -12,13 +12,22 @@ namespace Victoria.Infrastructure.Integration.Odoo
         private readonly ILogger<OdooPollingService> _logger;
         private readonly IOdooRpcClient _odooClient;
         private readonly IMessageBus _bus;
+        private readonly ProductSyncService _productSync;
+        private readonly InboundOrderSyncService _orderSync;
         private DateTime _lastSync = DateTime.UtcNow.AddDays(-1);
 
-        public OdooPollingService(ILogger<OdooPollingService> logger, IOdooRpcClient odooClient, IMessageBus bus)
+        public OdooPollingService(
+            ILogger<OdooPollingService> logger, 
+            IOdooRpcClient odooClient, 
+            IMessageBus bus,
+            ProductSyncService productSync,
+            InboundOrderSyncService orderSync)
         {
             _logger = logger;
             _odooClient = odooClient;
             _bus = bus;
+            _productSync = productSync;
+            _orderSync = orderSync;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -57,14 +66,43 @@ namespace Victoria.Infrastructure.Integration.Odoo
         private async Task SyncProducts(string tenantId, int odooCompanyId)
         {
             _logger.LogInformation("[POLLING] Syncing Products for Tenant {Tenant} (Odoo Company {Id})", tenantId, odooCompanyId);
-            // var products = await _odooClient.SearchAndReadAsync("product.product", domain_with_company, fields);
-            await Task.CompletedTask;
+            
+            var domain = new object[][] { 
+                new object[] { "active", "=", true }, 
+                new object[] { "detailed_type", "=", "product" },
+                new object[] { "company_id", "=", odooCompanyId }
+            };
+
+            var fields = new string[] { 
+                "id", "display_name", "default_code", "weight", 
+                "image_1920", "image_128", "product_tmpl_id" 
+            };
+
+            var products = await _odooClient.SearchAndReadAsync<OdooProductDto>("product.product", domain, fields);
+            
+            foreach (var p in products)
+            {
+                p.Company_Id = odooCompanyId;
+                await _productSync.SyncProduct(p);
+            }
         }
 
         private async Task SyncOrders()
         {
-            // Simulación de detección de órdenes nuevas
-            await Task.CompletedTask;
+            _logger.LogInformation("[POLLING] Syncing Ready Pickings (Incoming/Outgoing)");
+
+            var domain = new object[][] { 
+                new object[] { "state", "=", "assigned" },
+                new object[] { "picking_type_code", "in", new string[] { "incoming", "outgoing" } }
+            };
+
+            var fields = new string[] { "name", "picking_type_code", "company_id", "id" };
+            var pickings = await _odooClient.SearchAndReadAsync<OdooOrderDto>("stock.picking", domain, fields);
+            
+            foreach (var pick in pickings)
+            {
+                await _orderSync.SyncPicking(pick, pick.Picking_Type_Code);
+            }
         }
     }
 }

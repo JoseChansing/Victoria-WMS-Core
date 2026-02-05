@@ -22,14 +22,14 @@ namespace Victoria.API.Controllers
         public async Task<IActionResult> SyncProduct([FromBody] OdooProductDto product)
         {
             await _productSync.SyncProduct(product);
-            return Ok(new { Message = "Product integrated via ACL", Sku = product.InternalReference });
+            return Ok(new { Message = "Product integrated via ACL", Sku = product.Default_Code });
         }
 
         [HttpPost("sync-order")]
         public async Task<IActionResult> SyncOrder([FromBody] OdooOrderDto order)
         {
-            await _orderSync.SyncOrder(order);
-            return Ok(new { Message = "Order integrated and lines deduplicated", OrderId = order.OrderNumber });
+            await _orderSync.SyncPicking(order, "incoming");
+            return Ok(new { Message = "Order integrated and lines deduplicated", OrderId = order.Name });
         }
     }
 }

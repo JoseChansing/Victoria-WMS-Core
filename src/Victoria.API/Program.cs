@@ -46,7 +46,10 @@ builder.Services.AddScoped<Victoria.Infrastructure.Integration.Odoo.OdooFeedback
 builder.Services.AddScoped<Victoria.Inventory.Application.Commands.ApproveReceiptOverageHandler>();
 
 // Background Workers
-builder.Services.AddHostedService<Victoria.Infrastructure.Integration.Odoo.OdooPollingService>();
+if (builder.Configuration.GetValue<bool>("ENABLE_ODOO_POLLING"))
+{
+    builder.Services.AddHostedService<Victoria.Infrastructure.Integration.Odoo.OdooPollingService>();
+}
 
 builder.Services.AddControllers();
 
