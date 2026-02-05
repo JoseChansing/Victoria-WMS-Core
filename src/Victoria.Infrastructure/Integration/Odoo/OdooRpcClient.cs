@@ -126,13 +126,14 @@ namespace Victoria.Infrastructure.Integration.Odoo
                         if (innerArray != null)
                         {
                             // If property is int, take the first element (the ID)
-                            var firstVal = innerArray.SelectSingleNode("value/*");
-                            if (firstVal != null) finalValue = firstVal.InnerText;
+                            var firstValNode = innerArray.SelectSingleNode("value/*");
+                            if (firstValNode != null) finalValue = firstValNode.InnerText;
                         }
                         else
                         {
                             // Standard value (int, string, boolean)
-                            finalValue = valueNode.FirstChild?.InnerText;
+                            var valNode = valueNode.SelectSingleNode("*");
+                            finalValue = valNode?.InnerText;
                         }
 
                         if (finalValue != null)
