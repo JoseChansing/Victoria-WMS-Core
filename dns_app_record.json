@@ -1,0 +1,18 @@
+{
+    "Comment": "App Record for Victoria WMS",
+    "Changes": [
+        {
+            "Action": "CREATE",
+            "ResourceRecordSet": {
+                "Name": "app.victoriawms.dev.",
+                "Type": "CNAME",
+                "TTL": 300,
+                "ResourceRecords": [
+                    {
+                        "Value": "d2iutehupx2mek.cloudfront.net"
+                    }
+                ]
+            }
+        }
+    ]
+}

@@ -1,0 +1,18 @@
+{
+    "Comment": "ACM Validation for Victoria WMS",
+    "Changes": [
+        {
+            "Action": "CREATE",
+            "ResourceRecordSet": {
+                "Name": "_6dc7994c04fab95be9dcf61aafea97ab.victoriawms.dev.",
+                "Type": "CNAME",
+                "TTL": 300,
+                "ResourceRecords": [
+                    {
+                        "Value": "_eef289ec029ebcb69e25c04a42a2a07f.jkddzztszm.acm-validations.aws."
+                    }
+                ]
+            }
+        }
+    ]
+}

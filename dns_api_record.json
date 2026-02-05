@@ -1,0 +1,18 @@
+{
+    "Comment": "API Record for Victoria WMS",
+    "Changes": [
+        {
+            "Action": "CREATE",
+            "ResourceRecordSet": {
+                "Name": "api.victoriawms.dev.",
+                "Type": "A",
+                "TTL": 300,
+                "ResourceRecords": [
+                    {
+                        "Value": "3.14.182.244"
+                    }
+                ]
+            }
+        }
+    ]
+}
