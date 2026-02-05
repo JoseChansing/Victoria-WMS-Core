@@ -48,10 +48,10 @@ namespace Victoria.Infrastructure.Integration.Odoo
             <methodCall>
                 <methodName>authenticate</methodName>
                 <params>
-                    <param><value><string>{_db}</string></value></param>
-                    <param><value><string>{_user}</string></value></param>
-                    <param><value><string>{_apiKey}</string></value></param>
-                    <param><value><struct /></value></param>
+                    <param><value><string>{System.Security.SecurityElement.Escape(_db)}</string></value></param>
+                    <param><value><string>{System.Security.SecurityElement.Escape(_user)}</string></value></param>
+                    <param><value><string>{System.Security.SecurityElement.Escape(_apiKey)}</string></value></param>
+                    <param><value><struct></struct></value></param>
                 </params>
             </methodCall>";
 
@@ -219,6 +219,9 @@ namespace Victoria.Infrastructure.Integration.Odoo
         private async Task<string> SendAsync(string service, string xml)
         {
             var content = new StringContent(xml, Encoding.UTF8, "text/xml");
+            // Some Odoo versions are sensitive to charset=utf-8 in Content-Type
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/xml");
+            
             var response = await _httpClient.PostAsync($"{_url}/xmlrpc/2/{service}", content);
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadAsStringAsync();
