@@ -44,8 +44,7 @@ namespace Victoria.Infrastructure.Integration.Odoo
         {
             if (_uid != -1) return _uid;
 
-            var xml = $@"<?xml version='1.0'?>
-            <methodCall>
+            var xml = $@"<methodCall>
                 <methodName>authenticate</methodName>
                 <params>
                     <param><value><string>{System.Security.SecurityElement.Escape(_db)}</string></value></param>
@@ -57,7 +56,8 @@ namespace Victoria.Infrastructure.Integration.Odoo
 
             var response = await SendAsync("common", xml);
             _uid = ParseIntResponse(response);
-            Console.WriteLine($"[DEBUG] Odoo Auth UID: {_uid} | Response: {response}");
+            Console.WriteLine($"[DEBUG] Odoo Auth Request: {xml}");
+            Console.WriteLine($"[DEBUG] Odoo Auth Response: {response}");
             return _uid;
         }
 
@@ -70,23 +70,16 @@ namespace Victoria.Infrastructure.Integration.Odoo
             var domainXml = BuildDomainXml(domain);
             var fieldsXml = BuildFieldsXml(fields);
 
-            var xml = $@"<?xml version='1.0'?>
-            <methodCall>
+            var xml = $@"<methodCall>
                 <methodName>execute_kw</methodName>
                 <params>
-                    <param><value><string>{_db}</string></value></param>
+                    <param><value><string>{System.Security.SecurityElement.Escape(_db)}</string></value></param>
                     <param><value><int>{uid}</int></value></param>
-                    <param><value><string>{_apiKey}</string></value></param>
+                    <param><value><string>{System.Security.SecurityElement.Escape(_apiKey)}</string></value></param>
                     <param><value><string>{model}</string></value></param>
                     <param><value><string>search_read</string></value></param>
                     <param>
-                        <value>
-                            <array>
-                                <data>
-                                    <value>{domainXml}</value>
-                                </data>
-                            </array>
-                        </value>
+                        <value>{domainXml}</value>
                     </param>
                     <param>
                         <value>
@@ -190,7 +183,7 @@ namespace Victoria.Infrastructure.Integration.Odoo
                 sb.Append("<value><array><data>");
                 foreach (var part in criterion)
                 {
-                    if (part is string s) sb.Append($"<value><string>{s}</string></value>");
+                    if (part is string s) sb.Append($"<value><string>{System.Security.SecurityElement.Escape(s)}</string></value>");
                     else if (part is bool b) sb.Append($"<value><boolean>{(b ? "1" : "0")}</boolean></value>");
                     else if (part is string[] arr) sb.Append(BuildFieldsXml(arr));
                     else sb.Append($"<value><int>{part}</int></value>");
