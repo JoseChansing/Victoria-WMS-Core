@@ -105,6 +105,11 @@ namespace Victoria.Infrastructure.Integration.Odoo
             var structs = doc.SelectNodes("//struct");
             if (structs == null) return results;
 
+            if (structs.Count > 0) 
+            {
+                Console.WriteLine($"[DEBUG] Raw first struct XML: {structs[0]?.OuterXml}");
+            }
+
             foreach (XmlNode s in structs)
             {
                 var item = new T();
