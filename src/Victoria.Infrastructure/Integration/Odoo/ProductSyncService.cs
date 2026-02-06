@@ -26,10 +26,7 @@ namespace Victoria.Infrastructure.Integration.Odoo
         private readonly ILogger<ProductSyncService> _logger;
         private static readonly Dictionary<int, string> TenantMapping = new()
         {
-            { 1, "PERFECTPTY" },
-            { 2, "NATSUKI" },
-            { 3, "PDM" },
-            { 4, "FILTROS" }
+            { 1, "PERFECTPTY" }
         };
 
         public ProductSyncService(ILogger<ProductSyncService> logger, IConfiguration config)

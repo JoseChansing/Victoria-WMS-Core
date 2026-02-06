@@ -44,9 +44,8 @@ namespace Victoria.Infrastructure.Integration.Odoo
                     
                     _logger.LogInformation("Polling Odoo for changes since {LastSync}", _lastSync);
 
-                    // 1. Sync Products (REQUERIMIENTO 2: SCOPE MULTI-TENANT)
+                    // 1. Sync Products (EXCLUSIVO PERFECTPTY)
                     await SyncProducts("PERFECTPTY", 1);
-                    await SyncProducts("NATSUKI", 2);
 
                     // 2. Sync Orders
                     await SyncOrders();
