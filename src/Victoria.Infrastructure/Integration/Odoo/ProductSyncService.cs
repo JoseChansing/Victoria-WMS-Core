@@ -41,7 +41,10 @@ namespace Victoria.Infrastructure.Integration.Odoo
         public async Task SyncProduct(OdooProductDto odooProduct)
         {
             if (!TenantMapping.TryGetValue(odooProduct.Company_Id, out var tenantId))
+            {
+                _logger.LogWarning("[ProductSync] Skipping product {Name} - Company_Id {Id} not mapped to any Tenant.", odooProduct.Display_Name, odooProduct.Company_Id);
                 return;
+            }
 
             string skuCode = (odooProduct.Default_Code ?? "").ToUpper().Trim();
             if (string.IsNullOrEmpty(skuCode)) 

@@ -69,8 +69,7 @@ namespace Victoria.Infrastructure.Integration.Odoo
             
             // Flexibilizamos el filtro: Solo active=true para asegurar que traemos algo
             var domain = new object[][] { 
-                new object[] { "active", "=", true },
-                new object[] { "company_id", "=", odooCompanyId }
+                new object[] { "active", "=", true }
             };
 
             var fields = new string[] { 

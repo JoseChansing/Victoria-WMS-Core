@@ -152,19 +152,22 @@ namespace Victoria.Infrastructure.Integration.Odoo
                         if (finalValue != null)
                         {
                             try {
+                                string valStr = finalValue.ToString() ?? "";
                                 if (prop.PropertyType == typeof(int) || prop.PropertyType == typeof(Int32))
                                 {
-                                    if (int.TryParse(finalValue.ToString(), out int intVal))
+                                    if (int.TryParse(valStr, out int intVal))
                                         prop.SetValue(item, intVal);
                                 }
                                 else if (prop.PropertyType == typeof(double))
                                 {
-                                    if (double.TryParse(finalValue.ToString(), out double dblVal))
+                                    if (double.TryParse(valStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double dblVal))
                                         prop.SetValue(item, dblVal);
                                 }
                                 else
-                                    prop.SetValue(item, Convert.ChangeType(finalValue, prop.PropertyType));
-                            } catch { }
+                                    prop.SetValue(item, Convert.ChangeType(valStr, prop.PropertyType));
+                            } catch (Exception ex) {
+                                _logger.LogDebug("Error mapping field {Name}: {Msg}", name, ex.Message);
+                            }
                         }
                     }
                 }
