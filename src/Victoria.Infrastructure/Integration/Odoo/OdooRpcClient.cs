@@ -133,7 +133,11 @@ namespace Victoria.Infrastructure.Integration.Odoo
                     var valueNode = member.SelectSingleNode("value");
                     if (name == null || valueNode == null) continue;
                     
-                    var prop = Array.Find(props, p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+                    // Normalización de nombre: id -> Id, default_code -> DefaultCode/Default_Code
+                    var prop = Array.Find(props, p => 
+                        p.Name.Equals(name, StringComparison.OrdinalIgnoreCase) || 
+                        p.Name.Equals(name.Replace("_", ""), StringComparison.OrdinalIgnoreCase));
+
                     if (prop != null)
                     {
                         object? finalValue = null;
@@ -162,6 +166,10 @@ namespace Victoria.Infrastructure.Integration.Odoo
                                 {
                                     if (double.TryParse(valStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double dblVal))
                                         prop.SetValue(item, dblVal);
+                                }
+                                else if (prop.PropertyType == typeof(bool))
+                                {
+                                    prop.SetValue(item, valStr == "1" || valStr.ToLower() == "true");
                                 }
                                 else
                                     prop.SetValue(item, Convert.ChangeType(valStr, prop.PropertyType));
