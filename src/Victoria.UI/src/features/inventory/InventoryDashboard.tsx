@@ -14,8 +14,8 @@ import { useInventory } from '../../hooks/useInventory';
 import { useAuth } from '../../context/AuthContext';
 
 export const InventoryDashboard: React.FC = () => {
-    const { tenant, user } = useAuth();
-    const { inventory, isLoading, approveAdjustment } = useInventory(tenant);
+    const { user } = useAuth();
+    const { inventory, isLoading, approveAdjustment } = useInventory();
 
     if (isLoading) {
         return (
@@ -137,10 +137,10 @@ export const InventoryDashboard: React.FC = () => {
                                         </td>
                                         <td className="px-6 py-4 px-8">
                                             <div className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tight ${item.status === 'Quarantine'
-                                                    ? 'bg-rose-50 text-rose-600'
-                                                    : item.status === 'Putaway'
-                                                        ? 'bg-emerald-50 text-emerald-600'
-                                                        : 'bg-slate-100 text-slate-600'
+                                                ? 'bg-rose-50 text-rose-600'
+                                                : item.status === 'Putaway'
+                                                    ? 'bg-emerald-50 text-emerald-600'
+                                                    : 'bg-slate-100 text-slate-600'
                                                 }`}>
                                                 {item.status === 'Quarantine' && <AlertCircle className="w-3 h-3" />}
                                                 {item.status === 'Putaway' && <CheckCircle2 className="w-3 h-3" />}

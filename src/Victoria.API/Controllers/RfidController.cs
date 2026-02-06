@@ -15,11 +15,13 @@ namespace Victoria.API.Controllers
     {
         private readonly IEpcParser _epcParser;
         private readonly IRfidDebouncer _debouncer;
+        private readonly string _tenantId;
 
-        public RfidController(IEpcParser epcParser, IRfidDebouncer debouncer)
+        public RfidController(IEpcParser epcParser, IRfidDebouncer debouncer, IConfiguration config)
         {
             _epcParser = epcParser;
             _debouncer = debouncer;
+            _tenantId = config["App:TenantId"] ?? "PERFECTPTY";
         }
 
         [HttpPost("audit")]
@@ -61,7 +63,7 @@ namespace Victoria.API.Controllers
             {
                 // Disparar evento RfidMismatchDetected (Simulado)
                 var mismatchEvent = new RfidMismatchDetected(
-                    request.TenantId,
+                    _tenantId,
                     request.LocationCode,
                     missingTags,
                     extraTags,
@@ -110,6 +112,6 @@ namespace Victoria.API.Controllers
         }
     }
 
-    public record RfidAuditRequest(string TenantId, string LocationCode, List<string> Epcs);
+    public record RfidAuditRequest(string LocationCode, List<string> Epcs);
     public record RfidBurstRequest(List<string> Epcs, int Iterations = 50, int WindowSeconds = 5);
 }

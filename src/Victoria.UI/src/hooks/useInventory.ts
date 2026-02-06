@@ -11,23 +11,20 @@ export interface LpnItem {
     tenantId: string;
 }
 
-export const useInventory = (tenantId: string | null) => {
+export const useInventory = () => {
     const queryClient = useQueryClient();
 
     const inventoryQuery = useQuery({
-        queryKey: ['inventory', tenantId],
+        queryKey: ['inventory'],
         queryFn: async () => {
-            // Nota: En un backend real este endpoint filtraría por TenantId
-            const { data } = await api.get<LpnItem[]>(`/inventory?tenantId=${tenantId}`);
+            const { data } = await api.get<LpnItem[]>('/inventory');
             return data;
-        },
-        enabled: !!tenantId,
+        }
     });
 
     const approveAdjustment = useMutation({
         mutationFn: async (params: { lpnId: string, newQuantity: number, reason: string }) => {
             const { data } = await api.post('/inventory/adjust', {
-                tenantId,
                 lpnId: params.lpnId,
                 newQuantity: params.newQuantity,
                 reason: params.reason,

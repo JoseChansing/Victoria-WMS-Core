@@ -1,6 +1,6 @@
+using Marten;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
-using Npgsql;
 using System.Text.Json;
 using Victoria.Inventory.Domain.Aggregates;
 
@@ -22,26 +22,20 @@ namespace Victoria.Infrastructure.Integration.Odoo
 
     public class ProductSyncService
     {
-        private readonly string _connectionString;
+        private readonly IDocumentSession _session;
         private readonly ILogger<ProductSyncService> _logger;
-        private static readonly Dictionary<int, string> TenantMapping = new()
-        {
-            { 1, "PERFECTPTY" }
-        };
+        private readonly string _tenantId;
 
-        public ProductSyncService(ILogger<ProductSyncService> logger, IConfiguration config)
+        public ProductSyncService(IDocumentSession session, ILogger<ProductSyncService> logger, IConfiguration config)
         {
+            _session = session;
             _logger = logger;
-            _connectionString = config["POSTGRES_CONNECTION"] ?? "Host=localhost;Database=victoria_wms;Username=vicky_admin;Password=vicky_password";
+            _tenantId = config["App:TenantId"] ?? "PERFECTPTY";
         }
 
         public async Task SyncProduct(OdooProductDto odooProduct)
         {
-            if (!TenantMapping.TryGetValue(odooProduct.Company_Id, out var tenantId))
-            {
-                _logger.LogWarning("[ProductSync] Skipping product {Name} - Company_Id {Id} not mapped to any Tenant.", odooProduct.Display_Name, odooProduct.Company_Id);
-                return;
-            }
+            string tenantId = _tenantId;
 
             string skuCode = (odooProduct.Default_Code ?? "").ToUpper().Trim();
             if (string.IsNullOrEmpty(skuCode)) 
@@ -61,11 +55,11 @@ namespace Victoria.Infrastructure.Integration.Odoo
                 thumbnail = odooProduct.Image_128 ?? "";
             }
 
-            _logger.LogInformation("[ProductSync] Persisting SKU '{Sku}' | Source: {Src} for {Tenant}", skuCode, imageSource, tenantId);
+            _logger.LogInformation("[ProductSync-Marten] Persisting SKU '{Sku}' | Source: {Src} for {Tenant}", skuCode, imageSource, tenantId);
             
             var product = new Product
             {
-                Id = $"{tenantId}-{skuCode}", // ID Compuesto
+                Id = $"{tenantId}-{skuCode}", // ID Compuesto (Document Id para Marten)
                 Sku = skuCode,
                 Name = odooProduct.Display_Name,
                 TenantId = tenantId,
@@ -76,27 +70,8 @@ namespace Victoria.Infrastructure.Integration.Odoo
                 LastUpdated = DateTime.UtcNow
             };
 
-            using var conn = new NpgsqlConnection(_connectionString);
-            await conn.OpenAsync();
-
-            var json = JsonSerializer.Serialize(product);
-            var sql = @"
-                INSERT INTO Products (Id, Sku, Name, TenantId, OdooId, Data)
-                VALUES (@id, @sku, @name, @tenant, @odooId, @data::jsonb)
-                ON CONFLICT (Id) DO UPDATE SET 
-                    Data = EXCLUDED.Data,
-                    Name = EXCLUDED.Name,
-                    Sku = EXCLUDED.Sku;";
-
-            using var cmd = new NpgsqlCommand(sql, conn);
-            cmd.Parameters.AddWithValue("id", product.Id);
-            cmd.Parameters.AddWithValue("sku", product.Sku);
-            cmd.Parameters.AddWithValue("name", product.Name);
-            cmd.Parameters.AddWithValue("tenant", product.TenantId);
-            cmd.Parameters.AddWithValue("odooId", product.OdooId);
-            cmd.Parameters.AddWithValue("data", json);
-
-            await cmd.ExecuteNonQueryAsync();
+            _session.Store(product);
+            await _session.SaveChangesAsync();
         }
     }
 }

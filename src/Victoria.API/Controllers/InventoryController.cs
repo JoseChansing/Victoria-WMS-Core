@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
+using Marten;
 using Victoria.Inventory.Application.Commands;
+using Victoria.Inventory.Domain.Aggregates;
 using Victoria.Inventory.Domain.Exceptions;
 
 namespace Victoria.API.Controllers
@@ -21,7 +23,8 @@ namespace Victoria.API.Controllers
         private readonly Victoria.Inventory.Application.Services.CycleCountService _countService;
         private readonly ApproveReceiptOverageHandler _approveReceiptOverageHandler;
         private readonly Victoria.Core.Messaging.IMessageBus _bus;
-        private readonly string _connectionString;
+        private readonly IQuerySession _session;
+        private readonly string _tenantId;
 
         public InventoryController(
             ReceiveLpnHandler receiveHandler, 
@@ -33,6 +36,7 @@ namespace Victoria.API.Controllers
             Victoria.Inventory.Application.Services.CycleCountService countService,
             ApproveReceiptOverageHandler approveReceiptOverageHandler,
             Victoria.Core.Messaging.IMessageBus bus,
+            IQuerySession session,
             IConfiguration config)
         {
             _receiveHandler = receiveHandler;
@@ -44,32 +48,24 @@ namespace Victoria.API.Controllers
             _countService = countService;
             _approveReceiptOverageHandler = approveReceiptOverageHandler;
             _bus = bus;
-            _connectionString = config["POSTGRES_CONNECTION"] ?? "Host=localhost;Database=victoria_wms;Username=vicky_admin;Password=vicky_password";
+            _session = session;
+            _tenantId = config["App:TenantId"] ?? "PERFECTPTY";
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetInventory([FromQuery] string tenantId)
+        public async Task<IActionResult> GetInventory()
         {
-            var items = new List<object>();
-            using var conn = new Npgsql.NpgsqlConnection(_connectionString);
-            await conn.OpenAsync();
+            var lpns = await _session.Query<Lpn>()
+                .ToListAsync();
 
-            var sql = "SELECT id, sku, quantity, status, location FROM inventoryitems WHERE tenantid = @tenant";
-            using var cmd = new Npgsql.NpgsqlCommand(sql, conn);
-            cmd.Parameters.AddWithValue("tenant", tenantId);
-
-            using var reader = await cmd.ExecuteReaderAsync();
-            while (await reader.ReadAsync())
+            var items = lpns.Select(l => new
             {
-                items.Add(new
-                {
-                    Id = reader.IsDBNull(0) ? "" : reader.GetString(0),
-                    Sku = reader.IsDBNull(1) ? "" : reader.GetString(1),
-                    Quantity = reader.IsDBNull(2) ? 0 : reader.GetInt32(2),
-                    Status = reader.IsDBNull(3) ? "" : reader.GetString(3),
-                    Location = reader.IsDBNull(4) ? "" : reader.GetString(4)
-                });
-            }
+                Id = l.Id,
+                Sku = l.Sku.Value,
+                Quantity = l.Quantity,
+                Status = l.Status.ToString(),
+                Location = l.CurrentLocation ?? "N/A"
+            });
 
             return Ok(items);
         }
@@ -81,7 +77,7 @@ namespace Victoria.API.Controllers
             {
                 await _receiveHandler.Handle(new ReceiveLpnCommand
                 {
-                    TenantId = request.TenantId,
+                    TenantId = _tenantId,
                     LpnId = request.LpnId,
                     OrderId = request.OrderId,
                     ExpectedQuantity = request.ExpectedQuantity,
@@ -89,9 +85,8 @@ namespace Victoria.API.Controllers
                     UserId = request.UserId,
                     StationId = request.StationId
                 });
-                return Ok(new { Message = "LPN received successfully", LpnId = request.LpnId, Tenant = request.TenantId });
+                return Ok(new { Message = "LPN received successfully", LpnId = request.LpnId, Tenant = _tenantId });
             }
-            catch (TenantSecurityException ex) { return Forbid(ex.Message); }
             catch (InvalidOperationException ex) { return Conflict(new { Error = ex.Message }); }
             catch (ArgumentException ex) { return BadRequest(new { Error = ex.Message }); }
             catch (Exception ex) { return StatusCode(500, new { Error = ex.Message }); }
@@ -104,15 +99,14 @@ namespace Victoria.API.Controllers
             {
                 await _putawayHandler.Handle(new PutawayLpnCommand
                 {
-                    TenantId = request.TenantId,
+                    TenantId = _tenantId,
                     LpnId = request.LpnId,
                     LocationCode = request.LocationCode,
                     UserId = request.UserId,
                     StationId = request.StationId
                 });
-                return Ok(new { Message = "Putaway completed successfully", LpnId = request.LpnId, Tenant = request.TenantId });
+                return Ok(new { Message = "Putaway completed successfully", LpnId = request.LpnId, Tenant = _tenantId });
             }
-            catch (TenantSecurityException ex) { return StatusCode(403, new { Error = ex.Message }); }
             catch (InvalidOperationException ex) { return Conflict(new { Error = ex.Message }); }
             catch (ArgumentException ex) { return BadRequest(new { Error = ex.Message }); }
             catch (Exception ex) { return StatusCode(500, new { Error = ex.Message }); }
@@ -125,16 +119,15 @@ namespace Victoria.API.Controllers
             {
                 await _allocateHandler.Handle(new AllocateOrderCommand
                 {
-                    TenantId = request.TenantId,
+                    TenantId = _tenantId,
                     OrderId = request.OrderId,
                     Sku = request.Sku,
                     Quantity = request.Quantity,
                     UserId = request.UserId,
                     StationId = request.StationId
                 });
-                return Ok(new { Message = "Allocation successful", OrderId = request.OrderId, Tenant = request.TenantId });
+                return Ok(new { Message = "Allocation successful", OrderId = request.OrderId, Tenant = _tenantId });
             }
-            catch (TenantSecurityException ex) { return StatusCode(403, new { Error = ex.Message }); }
             catch (InvalidOperationException ex) { return Conflict(new { Error = ex.Message }); }
             catch (ArgumentException ex) { return BadRequest(new { Error = ex.Message }); }
             catch (Exception ex) { return StatusCode(500, new { Error = ex.Message }); }
@@ -147,14 +140,13 @@ namespace Victoria.API.Controllers
             {
                 await _pickHandler.Handle(new PickLpnCommand
                 {
-                    TenantId = request.TenantId,
+                    TenantId = _tenantId,
                     LpnId = request.LpnId,
                     UserId = request.UserId,
                     StationId = request.StationId
                 });
-                return Ok(new { Message = "LPN picked successfully", LpnId = request.LpnId, Tenant = request.TenantId });
+                return Ok(new { Message = "LPN picked successfully", LpnId = request.LpnId, Tenant = _tenantId });
             }
-            catch (TenantSecurityException ex) { return StatusCode(403, new { Error = ex.Message }); }
             catch (InvalidOperationException ex) { return Conflict(new { Error = ex.Message }); }
             catch (ArgumentException ex) { return BadRequest(new { Error = ex.Message }); }
             catch (Exception ex) { return StatusCode(500, new { Error = ex.Message }); }
@@ -167,16 +159,15 @@ namespace Victoria.API.Controllers
             {
                 await _packingHandler.Handle(new PackLpnsCommand
                 {
-                    TenantId = request.TenantId,
+                    TenantId = _tenantId,
                     MasterLpnId = request.MasterLpnId,
                     ChildLpnIds = request.ChildLpnIds,
                     Weight = request.Weight,
                     UserId = request.UserId,
                     StationId = request.StationId
                 });
-                return Ok(new { Message = "Packing completed. Master container created.", MasterLpnId = request.MasterLpnId, Tenant = request.TenantId });
+                return Ok(new { Message = "Packing completed. Master container created.", MasterLpnId = request.MasterLpnId, Tenant = _tenantId });
             }
-            catch (TenantSecurityException ex) { return StatusCode(403, new { Error = ex.Message }); }
             catch (Exception ex) { return StatusCode(500, new { Error = ex.Message }); }
         }
 
@@ -185,11 +176,11 @@ namespace Victoria.API.Controllers
         {
             try
             {
-                var zpl = await _dispatchService.DispatchOrder(request.TenantId, id, request.DockDoor, request.UserId);
+                var zpl = await _dispatchService.DispatchOrder(_tenantId, id, request.DockDoor, request.UserId);
                 
                 // REQUERIMIENTO FASE 16: Comunicación desacoplada vía Bus
                 await _bus.PublishAsync(new Victoria.Inventory.Domain.Events.DispatchConfirmed(
-                    request.TenantId, 
+                    _tenantId, 
                     id, 
                     request.DockDoor, 
                     new List<string> { "LPN-GOLIVE-001" }, 
@@ -197,9 +188,8 @@ namespace Victoria.API.Controllers
                     request.UserId, 
                     "WEB-PORTAL"));
 
-                return Ok(new { Message = "Order dispatched and event published to Bus.", LabelZPL = zpl, Tenant = request.TenantId });
+                return Ok(new { Message = "Order dispatched and event published to Bus.", LabelZPL = zpl, Tenant = _tenantId });
             }
-            catch (TenantSecurityException ex) { return StatusCode(403, new { Error = ex.Message }); }
             catch (Exception ex) { return StatusCode(500, new { Error = ex.Message }); }
         }
 
@@ -210,7 +200,7 @@ namespace Victoria.API.Controllers
             {
                 await _approveReceiptOverageHandler.Handle(new ApproveReceiptOverageCommand
                 {
-                    TenantId = request.TenantId,
+                    TenantId = _tenantId,
                     LpnId = request.LpnId,
                     SupervisorId = request.SupervisorId
                 });
@@ -224,10 +214,9 @@ namespace Victoria.API.Controllers
         {
             try
             {
-                await _countService.ProcessBlindCount(request.TenantId, request.LpnId, request.CountedQuantity, request.UserId, request.StationId);
+                await _countService.ProcessBlindCount(_tenantId, request.LpnId, request.CountedQuantity, request.UserId, request.StationId);
                 return Ok(new { Message = "Count processed successfully.", LpnId = request.LpnId });
             }
-            catch (TenantSecurityException ex) { return StatusCode(403, new { Error = ex.Message }); }
             catch (Exception ex) { return StatusCode(500, new { Error = ex.Message }); }
         }
 
@@ -236,22 +225,21 @@ namespace Victoria.API.Controllers
         {
             try
             {
-                await _countService.AuthorizeAdjustment(request.TenantId, request.LpnId, request.NewQuantity, request.Reason, request.SupervisorId);
+                await _countService.AuthorizeAdjustment(_tenantId, request.LpnId, request.NewQuantity, request.Reason, request.SupervisorId);
                 return Ok(new { Message = "Adjustment authorized and completed.", LpnId = request.LpnId });
             }
-            catch (TenantSecurityException ex) { return StatusCode(403, new { Error = ex.Message }); }
             catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
             catch (Exception ex) { return StatusCode(500, new { Error = ex.Message }); }
         }
     }
 
-    public record ReceiveLpnRequest(string TenantId, string LpnId, string OrderId, int ExpectedQuantity, int ReceivedQuantity, string UserId, string StationId);
-    public record PutawayLpnRequest(string TenantId, string LpnId, string LocationCode, string UserId, string StationId);
-    public record AllocateOrderRequest(string TenantId, string OrderId, string Sku, int Quantity, string UserId, string StationId);
-    public record PickLpnRequest(string TenantId, string LpnId, string UserId, string StationId);
-    public record PackLpnsRequest(string TenantId, string MasterLpnId, List<string> ChildLpnIds, double Weight, string UserId, string StationId);
-    public record DispatchOrderRequest(string TenantId, string DockDoor, string UserId);
-    public record ReportCountRequest(string TenantId, string LpnId, int CountedQuantity, string UserId, string StationId);
-    public record AuthorizeAdjustmentRequest(string TenantId, string LpnId, int NewQuantity, string Reason, string SupervisorId);
-    public record ApproveReceiptOverageRequest(string TenantId, string LpnId, string SupervisorId);
+    public record ReceiveLpnRequest(string LpnId, string OrderId, int ExpectedQuantity, int ReceivedQuantity, string UserId, string StationId);
+    public record PutawayLpnRequest(string LpnId, string LocationCode, string UserId, string StationId);
+    public record AllocateOrderRequest(string OrderId, string Sku, int Quantity, string UserId, string StationId);
+    public record PickLpnRequest(string LpnId, string UserId, string StationId);
+    public record PackLpnsRequest(string MasterLpnId, List<string> ChildLpnIds, double Weight, string UserId, string StationId);
+    public record DispatchOrderRequest(string DockDoor, string UserId);
+    public record ReportCountRequest(string LpnId, int CountedQuantity, string UserId, string StationId);
+    public record AuthorizeAdjustmentRequest(string LpnId, int NewQuantity, string Reason, string SupervisorId);
+    public record ApproveReceiptOverageRequest(string LpnId, string SupervisorId);
 }

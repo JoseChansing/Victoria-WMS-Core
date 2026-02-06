@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
 using StackExchange.Redis;
+using Marten;
 using Victoria.Core.Infrastructure;
 using Victoria.Infrastructure.Persistence;
 using Victoria.Infrastructure.Redis;
@@ -18,11 +19,19 @@ var postgresConnectionString = builder.Configuration.GetValue<string>("POSTGRES_
 // 2. Redis Configuration
 builder.Services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Connect(redisConnectionString));
 
+// Marten Configuration (Identidad Aislada por Instancia)
+builder.Services.AddMarten(opts =>
+{
+    opts.Connection(builder.Configuration.GetConnectionString("Marten") ?? postgresConnectionString);
+    // Aseguramos que NO haya particionamiento por tenant lógico
+    opts.Events.TenancyStyle = Marten.Storage.TenancyStyle.Single; 
+}).UseLightweightSessions();
+
 // 3. Register Infrastructure Services (Wiring Interfaces with Implementations)
 builder.Services.AddScoped<ILockService, RedisLockService>();
 builder.Services.AddSingleton<IEpcParser, EpcParser>();
 builder.Services.AddSingleton<IRfidDebouncer, RfidDebouncer>();
-builder.Services.AddScoped<IEventStore, PostgresEventStore>();
+builder.Services.AddSingleton<Victoria.Core.ILpnFactory, Victoria.Core.LpnFactory>();
 
 // 4. Register Application Services
 builder.Services.AddScoped<Victoria.Inventory.Domain.Services.LabelService>();

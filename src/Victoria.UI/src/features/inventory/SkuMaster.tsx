@@ -2,7 +2,6 @@ import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Search, Filter, Database } from 'lucide-react';
 import api from '../../api/axiosConfig';
-import { useAuth } from '../../context/AuthContext';
 
 interface Product {
     sku: string;
@@ -11,15 +10,14 @@ interface Product {
 }
 
 export const SkuMaster: React.FC = () => {
-    const { tenant } = useAuth();
+
 
     const { data: products = [], isLoading } = useQuery({
-        queryKey: ['products', tenant],
+        queryKey: ['products'],
         queryFn: async () => {
-            const { data } = await api.get<Product[]>(`/products?tenantId=${tenant}`);
+            const { data } = await api.get<Product[]>('/products');
             return data;
-        },
-        enabled: !!tenant
+        }
     });
 
     if (isLoading) {

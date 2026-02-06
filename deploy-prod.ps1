@@ -18,10 +18,10 @@ aws s3 sync dist/ s3://app.victoriawms.dev --delete --region us-east-2
 aws cloudfront create-invalidation --distribution-id E1IAC81MX1E6UM --paths "/*"
 Set-Location ../..
 
-# 2. Backend Package (Usando Git Archive para asegurar integridad del código confirmado)
+# 2. Backend Package (Incluyendo cambios locales NO confirmados)
 Write-Host "2. Backend Package..." -ForegroundColor Yellow
 if (Test-Path deploy-package.zip) { Remove-Item deploy-package.zip }
-git archive --format=zip HEAD -o deploy-package.zip
+Compress-Archive -Path "src/Victoria.API", "src/Victoria.Core", "src/Victoria.Infrastructure", "src/Victoria.Inventory", "docker-compose.prod.yml", ".env.production" -DestinationPath deploy-package.zip
 
 Write-Host "Subiendo archivos a EC2..." -ForegroundColor Yellow
 $DestPackage = $EC2_HOST + ":~/deploy-package.zip"
@@ -52,7 +52,13 @@ else
 fi
 
 echo '>>> Limpiando contenedores previos para evitar conflictos...'
-docker rm -f victoria-api victoria-worker nginx-proxy || true
+docker rm -f api-perfect worker-perfect victoria-api victoria-worker nginx-proxy || true
+
+echo '>>> Creando base de datos si no existe...'
+docker run --rm \
+  -e PGPASSWORD=vicky_password \
+  postgres:15-alpine \
+  psql -h victoria-db.ct8iwqe86oz4.us-east-2.rds.amazonaws.com -U vicky_admin -d postgres -c "CREATE DATABASE victoria_perfect;" || true
 
 echo '>>> Rebuild Docker (Construyendo en servidor)...'
 docker compose -f docker-compose.prod.yml up -d --build
@@ -65,13 +71,25 @@ docker run --rm \
   -v /home/ec2-user/06_InventoryItems.sql:/tmp/06.sql \
   -e PGPASSWORD=vicky_password \
   postgres:15-alpine \
-  sh -c 'psql -h victoria-db.ct8iwqe86oz4.us-east-2.rds.amazonaws.com -U vicky_admin -d victoria_wms -f /tmp/04.sql && psql -h victoria-db.ct8iwqe86oz4.us-east-2.rds.amazonaws.com -U vicky_admin -d victoria_wms -f /tmp/05.sql && psql -h victoria-db.ct8iwqe86oz4.us-east-2.rds.amazonaws.com -U vicky_admin -d victoria_wms -f /tmp/06.sql'
+  sh -c 'psql -h victoria-db.ct8iwqe86oz4.us-east-2.rds.amazonaws.com -U vicky_admin -d victoria_perfect -f /tmp/04.sql && psql -h victoria-db.ct8iwqe86oz4.us-east-2.rds.amazonaws.com -U vicky_admin -d victoria_perfect -f /tmp/05.sql && psql -h victoria-db.ct8iwqe86oz4.us-east-2.rds.amazonaws.com -U vicky_admin -d victoria_perfect -f /tmp/06.sql'
 
-echo '>>> [VERIFICACION] Estado de la Base de Datos:'
+# 5. Verificación Final (Audit & Logs)
+echo '>>> Esperando inicialización de servicios (30s)...'
+sleep 30
+
+echo '>>> [AUDITORIA] Tablas en la base de datos (Buscando mt_doc_...):'
 docker run --rm \
   -e PGPASSWORD=vicky_password \
   postgres:15-alpine \
-  sh -c 'psql -h victoria-db.ct8iwqe86oz4.us-east-2.rds.amazonaws.com -U vicky_admin -d victoria_wms -c "SELECT count(*) as product_count FROM \"Products\"; SELECT count(*) as inbound_count FROM \"InboundOrders\";"'
+  sh -c 'psql -h victoria-db.ct8iwqe86oz4.us-east-2.rds.amazonaws.com -U vicky_admin -d victoria_perfect -c "\dt mt_doc_*"'
+  
+docker run --rm \
+  -e PGPASSWORD=vicky_password \
+  postgres:15-alpine \
+  sh -c 'psql -h victoria-db.ct8iwqe86oz4.us-east-2.rds.amazonaws.com -U vicky_admin -d victoria_perfect -c "SELECT count(*) FROM mt_doc_inboundorder;" || echo "Tabla mt_doc_inboundorder aun no creada."'
+
+echo '>>> [LOGS] Victoria Worker (Marten status):'
+docker compose logs --tail 50 worker-perfect
 
 echo '>>> Finalizado.'
 "@

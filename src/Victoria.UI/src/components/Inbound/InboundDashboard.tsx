@@ -13,7 +13,6 @@ import {
 import type { ImageSource } from '../../types/inbound';
 import { useInbound } from '../../hooks/useInbound';
 
-import { useAuth } from '../../context/AuthContext';
 
 const getImageIcon = (source: ImageSource | null) => {
     switch (source) {
@@ -28,8 +27,8 @@ const getImageIcon = (source: ImageSource | null) => {
 };
 
 const InboundDashboard: React.FC = () => {
-    const { tenant } = useAuth();
-    const { kpis, orders, isLoading } = useInbound(tenant);
+
+    const { kpis, orders, isLoading } = useInbound();
 
     if (isLoading) {
         return (

@@ -2,23 +2,21 @@ import { useQuery } from '@tanstack/react-query';
 import api from '../api/axiosConfig';
 import type { PurchaseOrder, InboundKPIs } from '../types/inbound';
 
-export const useInbound = (tenantId: string | null) => {
+export const useInbound = () => {
     const kpisQuery = useQuery({
-        queryKey: ['inbound-kpis', tenantId],
+        queryKey: ['inbound-kpis'],
         queryFn: async () => {
-            const { data } = await api.get<InboundKPIs>(`/inbound/kpis?tenantId=${tenantId}`);
+            const { data } = await api.get<InboundKPIs>('/inbound/kpis');
             return data;
-        },
-        enabled: !!tenantId,
+        }
     });
 
     const ordersQuery = useQuery({
-        queryKey: ['inbound-orders', tenantId],
+        queryKey: ['inbound-orders'],
         queryFn: async () => {
-            const { data } = await api.get<PurchaseOrder[]>(`/inbound/orders?tenantId=${tenantId}`);
+            const { data } = await api.get<PurchaseOrder[]>('/inbound/orders');
             return data;
-        },
-        enabled: !!tenantId,
+        }
     });
 
     return {
