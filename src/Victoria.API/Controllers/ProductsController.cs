@@ -14,18 +14,17 @@ namespace Victoria.API.Controllers
     public class ProductsController : ControllerBase
     {
         private readonly IQuerySession _session;
-        private readonly string _tenantId;
 
-        public ProductsController(IQuerySession session, IConfiguration config)
+        public ProductsController(IQuerySession session)
         {
             _session = session;
-            _tenantId = config["App:TenantId"] ?? "PERFECTPTY";
         }
 
         [HttpGet]
         public async Task<IActionResult> GetProducts()
         {
             var products = await _session.Query<Product>()
+                .Take(100)
                 .ToListAsync();
 
             return Ok(products);

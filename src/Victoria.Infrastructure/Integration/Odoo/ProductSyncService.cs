@@ -1,3 +1,4 @@
+using System;
 using Marten;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
@@ -18,26 +19,34 @@ namespace Victoria.Infrastructure.Integration.Odoo
         public string? Image_Template { get; set; } // placeholder for template
         public string? Brand_Logo { get; set; }
         public string? Image_128 { get; set; } // thumbnail
+        public string? Detailed_Type { get; set; } // product (storable), service, consu
     }
 
     public class ProductSyncService
     {
         private readonly IDocumentSession _session;
         private readonly ILogger<ProductSyncService> _logger;
-        private readonly string _tenantId;
-
-        public ProductSyncService(IDocumentSession session, ILogger<ProductSyncService> logger, IConfiguration config)
+        public ProductSyncService(IDocumentSession session, ILogger<ProductSyncService> logger)
         {
             _session = session;
             _logger = logger;
-            _tenantId = config["App:TenantId"] ?? "PERFECTPTY";
         }
 
         public async Task SyncProduct(OdooProductDto odooProduct)
         {
-            string tenantId = _tenantId;
 
             string skuCode = (odooProduct.Default_Code ?? "").ToUpper().Trim();
+
+            _logger.LogInformation("[FILTER-CHECK] Processing '{Name}' | Code: '{Code}' | Type: '{Type}'", 
+                odooProduct.Display_Name, skuCode, odooProduct.Detailed_Type);
+
+            // GUARD: Ignorar explícitamente basura conocida
+            if (skuCode == "0" || odooProduct.Display_Name.Contains("Settle Invoice", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("[FILTER-GUARD] Skipping system product '{Name}'", odooProduct.Display_Name);
+                return;
+            }
+
             if (string.IsNullOrEmpty(skuCode)) 
                 skuCode = $"ODOO-{odooProduct.Id}"; // Fallback para que los productos aparezcan
 
@@ -55,14 +64,13 @@ namespace Victoria.Infrastructure.Integration.Odoo
                 thumbnail = odooProduct.Image_128 ?? "";
             }
 
-            _logger.LogInformation("[ProductSync-Marten] Persisting SKU '{Sku}' | Source: {Src} for {Tenant}", skuCode, imageSource, tenantId);
+            _logger.LogInformation("[ProductSync-Marten] Persisting SKU '{Sku}' | Source: {Src}", skuCode, imageSource);
             
             var product = new Product
             {
-                Id = $"{tenantId}-{skuCode}", // ID Compuesto (Document Id para Marten)
+                Id = skuCode, // ID única natural en DB aislada
                 Sku = skuCode,
                 Name = odooProduct.Display_Name,
-                TenantId = tenantId,
                 Weight = odooProduct.Weight,
                 ImageSource = imageSource,
                 Thumbnail = thumbnail,

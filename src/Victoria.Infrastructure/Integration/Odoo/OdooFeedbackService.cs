@@ -22,8 +22,7 @@ namespace Victoria.Infrastructure.Integration.Odoo
             {
                 OdooOrderId = @event.OrderId,
                 Date = @event.OccurredOn,
-                Items = @event.DispatchedLpnIds.Select(id => new { LpnId = id, Status = "SHIPPED" }),
-                Tenant = @event.TenantId
+                Items = @event.DispatchedLpnIds.Select(id => new { LpnId = id, Status = "SHIPPED" })
             };
 
             await _bus.PublishAsync(odooMessage);

@@ -8,7 +8,6 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${DB_PASSWORD}
-      # OJO: Postgres crea una DB default, nosotros usaremos cadenas específicas
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -21,11 +20,28 @@ services:
     networks:
       - victoria-net
 
+  # === NGINX PROXY ===
+  nginx-proxy:
+    image: nginx:alpine
+    container_name: nginx-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./dist:/usr/share/nginx/html
+      - ./certbot/www:/var/www/certbot
+      - ./certbot/conf:/etc/letsencrypt
+    depends_on:
+      - api-perfect
+    networks:
+      - victoria-net
+
   # === API PERFECT PTY ===
   api-perfect:
     build:
       context: .
-      dockerfile: src/Victoria.API/Dockerfile
+      dockerfile: Dockerfile
     image: victoria-api:latest
     container_name: api-perfect
     restart: always
@@ -36,9 +52,7 @@ services:
       - Odoo__Url=${ODOO_URL_PERFECT}
       - Odoo__Db=${ODOO_DB_PERFECT}
       - Odoo__User=${ODOO_USER_PERFECT}
-      - Odoo__ApiKey=${ODOO_KEY_PERFECT}
       - App__TenantPrefix=PTC
-      - App__TenantId=PERFECTPTY
     ports:
       - "8081:8080"
     depends_on:
@@ -49,22 +63,17 @@ services:
 
   # === WORKER PERFECT PTY ===
   worker-perfect:
-    build:
-      context: .
-      dockerfile: src/Victoria.API/Dockerfile
     image: victoria-api:latest
     container_name: worker-perfect
-    restart: always
-    command: [ "dotnet", "Victoria.Worker.dll" ]
     environment:
+      - App__TenantPrefix=PTC
+      - ENABLE_ODOO_POLLING=true
       - ConnectionStrings__Marten=Host=victoria-db;Database=victoria_perfect;Username=postgres;Password=${DB_PASSWORD}
       - ConnectionStrings__Redis=victoria-cache:6379
       - Odoo__Url=${ODOO_URL_PERFECT}
       - Odoo__Db=${ODOO_DB_PERFECT}
       - Odoo__User=${ODOO_USER_PERFECT}
-      - Odoo__ApiKey=${ODOO_KEY_PERFECT}
-      - App__TenantPrefix=PTC
-      - App__TenantId=PERFECTPTY
+      - Odoo__ApiKey=${ODOO_PASSWORD_PERFECT}
     depends_on:
       - victoria-db
     networks:

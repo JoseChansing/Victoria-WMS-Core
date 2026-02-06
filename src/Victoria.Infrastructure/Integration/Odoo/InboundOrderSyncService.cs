@@ -25,19 +25,16 @@ namespace Victoria.Infrastructure.Integration.Odoo
     {
         private readonly IDocumentSession _session;
         private readonly ILogger<InboundOrderSyncService> _logger;
-        private readonly string _tenantId;
 
-        public InboundOrderSyncService(IDocumentSession session, ILogger<InboundOrderSyncService> logger, IConfiguration config)
+        public InboundOrderSyncService(IDocumentSession session, ILogger<InboundOrderSyncService> logger)
         {
             _session = session;
             _logger = logger;
-            _tenantId = config["App:TenantId"] ?? "PERFECTPTY";
         }
 
         public async Task SyncPicking(OdooOrderDto odooPicking, string type)
         {
-            string tenantId = _tenantId;
-            _logger?.LogInformation("[OdooSync-Marten] Persisting {Type} Picking: {Ref} for {Tenant}", type, odooPicking.Name, tenantId);
+            _logger?.LogInformation("[OdooSync-Marten] Persisting {Type} Picking: {Ref}", type, odooPicking.Name);
 
             var lines = new List<InboundLine>();
             foreach (var l in (odooPicking.Lines ?? new()))
@@ -50,7 +47,7 @@ namespace Victoria.Infrastructure.Integration.Odoo
 
                 // BUSCAR SKU Y METADATOS VIA MARTEN
                 var product = await _session.Query<Product>()
-                    .Where(x => x.OdooId == l.Product_Id && x.TenantId == tenantId)
+                    .Where(x => x.OdooId == l.Product_Id)
                     .FirstOrDefaultAsync();
                 
                 if (product != null)
@@ -73,7 +70,6 @@ namespace Victoria.Infrastructure.Integration.Odoo
                 OrderNumber = odooPicking.Name,
                 Supplier = "Odoo Supplier",
                 Status = "Pending",
-                TenantId = tenantId,
                 Lines = lines,
                 TotalUnits = lines.Sum(l => l.ExpectedQty)
             };

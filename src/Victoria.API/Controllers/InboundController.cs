@@ -14,12 +14,10 @@ namespace Victoria.API.Controllers
     public class InboundController : ControllerBase
     {
         private readonly IQuerySession _session;
-        private readonly string _tenantId;
 
-        public InboundController(IQuerySession session, IConfiguration config)
+        public InboundController(IQuerySession session)
         {
             _session = session;
-            _tenantId = config["App:TenantId"] ?? "PERFECTPTY";
         }
 
         [HttpGet("kpis")]

@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-Write-Host "INICIANDO DESPLIEGUE A PRODUCCION (Remoto/Limpio)" -ForegroundColor Cyan
+Write-Host "INICIANDO DESPLIEGUE A PRODUCCION (ROBUSTO - PERFECTPTY)" -ForegroundColor Cyan
 
 # Variables
 $EC2_HOST = "ec2-user@3.14.182.244"
@@ -18,78 +18,83 @@ aws s3 sync dist/ s3://app.victoriawms.dev --delete --region us-east-2
 aws cloudfront create-invalidation --distribution-id E1IAC81MX1E6UM --paths "/*"
 Set-Location ../..
 
-# 2. Backend Package (Incluyendo cambios locales NO confirmados)
+# 2. Backend Package (Área de Staging limpia con Robocopy)
 Write-Host "2. Backend Package..." -ForegroundColor Yellow
 if (Test-Path deploy-package.zip) { Remove-Item deploy-package.zip }
-Compress-Archive -Path "src/Victoria.API", "src/Victoria.Core", "src/Victoria.Infrastructure", "src/Victoria.Inventory", "docker-compose.prod.yml", ".env.production" -DestinationPath deploy-package.zip
+if (Test-Path deploy_pkg) { Remove-Item deploy_pkg -Recurse -Force }
+
+New-Item -ItemType Directory -Path "deploy_pkg/src" | Out-Null
+robocopy src/Victoria.API deploy_pkg/src/Victoria.API /S /XD bin obj | Out-Null
+robocopy src/Victoria.Core deploy_pkg/src/Victoria.Core /S /XD bin obj | Out-Null
+robocopy src/Victoria.Infrastructure deploy_pkg/src/Victoria.Infrastructure /S /XD bin obj | Out-Null
+robocopy src/Victoria.Inventory deploy_pkg/src/Victoria.Inventory /S /XD bin obj | Out-Null
+
+Copy-Item "docker-compose.prod.yml" -Destination "deploy_pkg"
+Copy-Item ".env.production" -Destination "deploy_pkg"
+Copy-Item "Dockerfile" -Destination "deploy_pkg"
+
+# Comprimir el contenido (sin la carpeta raiz)
+Set-Location deploy_pkg
+Compress-Archive -Path "*" -DestinationPath ../deploy-package.zip -Force
+Set-Location ..
+Remove-Item deploy_pkg -Recurse -Force
 
 Write-Host "Subiendo archivos a EC2..." -ForegroundColor Yellow
 $DestPackage = $EC2_HOST + ":~/deploy-package.zip"
-$DestSql04 = $EC2_HOST + ":~/04_InboundOrders.sql"
-$DestSql05 = $EC2_HOST + ":~/05_Products.sql"
-$DestSql06 = $EC2_HOST + ":~/06_InventoryItems.sql"
-
 scp -i $KEY_PATH -o StrictHostKeyChecking=no deploy-package.zip $DestPackage
-scp -i $KEY_PATH -o StrictHostKeyChecking=no src/Victoria.Infrastructure/Persistence/Scripts/04_InboundOrders.sql $DestSql04
-scp -i $KEY_PATH -o StrictHostKeyChecking=no src/Victoria.Infrastructure/Persistence/Scripts/05_Products.sql $DestSql05
-scp -i $KEY_PATH -o StrictHostKeyChecking=no src/Victoria.Infrastructure/Persistence/Scripts/06_InventoryItems.sql $DestSql06
 
 # 3. Remote Execution
 Write-Host "3. Remote Execution..." -ForegroundColor Yellow
 
 $RemoteScript = @"
 set -e
-echo '>>> Unzipping...'
+echo '>>> Limpieza Profunda de Procesos y Archivos...'
+sudo pkill -f dotnet || true
+
+echo '>>> Limpiando instalacion previa...'
+sudo rm -rf ~/victoria-wms
 mkdir -p ~/victoria-wms
+
+echo '>>> Extracting code...'
 unzip -o ~/deploy-package.zip -d ~/victoria-wms
-cd ~/victoria-wms
+ls -la ~/victoria-wms
 
 echo '>>> Configurando .env...'
-if [ -f .env.production ]; then
-    cp .env.production .env
+if [ -f ~/victoria-wms/.env.production ]; then
+    cp ~/victoria-wms/.env.production ~/victoria-wms/.env
+    echo ".env created from .env.production"
 else
-    echo "WARNING: .env.production not found"
+    echo "ERROR: .env.production not found in package"
+    exit 1
 fi
 
-echo '>>> Limpiando contenedores previos para evitar conflictos...'
+echo '>>> Limpiando Docker...'
 docker rm -f api-perfect worker-perfect victoria-api victoria-worker nginx-proxy || true
 
-echo '>>> Creando base de datos si no existe...'
+echo '>>> Creando base de datos...'
 docker run --rm \
   -e PGPASSWORD=vicky_password \
   postgres:15-alpine \
   psql -h victoria-db.ct8iwqe86oz4.us-east-2.rds.amazonaws.com -U vicky_admin -d postgres -c "CREATE DATABASE victoria_perfect;" || true
 
 echo '>>> Rebuild Docker (Construyendo en servidor)...'
-docker compose -f docker-compose.prod.yml up -d --build
+cd ~/victoria-wms
+docker compose -f docker-compose.prod.yml up -d --build --force-recreate
 
-echo '>>> DB Migration (via Docker)...'
-sleep 30
-docker run --rm \
-  -v /home/ec2-user/04_InboundOrders.sql:/tmp/04.sql \
-  -v /home/ec2-user/05_Products.sql:/tmp/05.sql \
-  -v /home/ec2-user/06_InventoryItems.sql:/tmp/06.sql \
-  -e PGPASSWORD=vicky_password \
-  postgres:15-alpine \
-  sh -c 'psql -h victoria-db.ct8iwqe86oz4.us-east-2.rds.amazonaws.com -U vicky_admin -d victoria_perfect -f /tmp/04.sql && psql -h victoria-db.ct8iwqe86oz4.us-east-2.rds.amazonaws.com -U vicky_admin -d victoria_perfect -f /tmp/05.sql && psql -h victoria-db.ct8iwqe86oz4.us-east-2.rds.amazonaws.com -U vicky_admin -d victoria_perfect -f /tmp/06.sql'
+echo '>>> Esperando inicializacion (45s)...'
+sleep 45
 
-# 5. Verificación Final (Audit & Logs)
-echo '>>> Esperando inicialización de servicios (30s)...'
-sleep 30
+echo '>>> [VERIFICACION] Estado de Contenedores:'
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
-echo '>>> [AUDITORIA] Tablas en la base de datos (Buscando mt_doc_...):'
+echo '>>> [AUDITORIA] Tablas Marten:'
 docker run --rm \
   -e PGPASSWORD=vicky_password \
   postgres:15-alpine \
-  sh -c 'psql -h victoria-db.ct8iwqe86oz4.us-east-2.rds.amazonaws.com -U vicky_admin -d victoria_perfect -c "\dt mt_doc_*"'
-  
-docker run --rm \
-  -e PGPASSWORD=vicky_password \
-  postgres:15-alpine \
-  sh -c 'psql -h victoria-db.ct8iwqe86oz4.us-east-2.rds.amazonaws.com -U vicky_admin -d victoria_perfect -c "SELECT count(*) FROM mt_doc_inboundorder;" || echo "Tabla mt_doc_inboundorder aun no creada."'
+  sh -c 'psql -h victoria-db.ct8iwqe86oz4.us-east-2.rds.amazonaws.com -U vicky_admin -d victoria_perfect -c "\dt mt_doc_*"' || echo "No Marten tables found yet."
 
 echo '>>> [LOGS] Victoria Worker (Marten status):'
-docker compose logs --tail 50 worker-perfect
+docker logs worker-perfect --tail 100 || echo "No logs found for worker-perfect"
 
 echo '>>> Finalizado.'
 "@

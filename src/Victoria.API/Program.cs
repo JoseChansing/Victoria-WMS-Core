@@ -12,17 +12,20 @@ using Victoria.Inventory.Domain.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Connection Strings from Environment Variables (Fase 4 Requirement)
-var redisConnectionString = builder.Configuration.GetValue<string>("REDIS_CONNECTION") ?? "localhost:6379";
-var postgresConnectionString = builder.Configuration.GetValue<string>("POSTGRES_CONNECTION") ?? "Host=localhost;Database=victoria_wms;Username=vicky_admin;Password=vicky_password";
+// 1. Connection Strings from Environment Variables
+var redisConnectionString = builder.Configuration.GetConnectionString("Redis") ?? builder.Configuration.GetValue<string>("REDIS_CONNECTION") ?? "localhost:6379";
+var postgresConnectionString = builder.Configuration.GetConnectionString("Marten") ?? builder.Configuration.GetValue<string>("POSTGRES_CONNECTION") ?? "Host=localhost;Database=victoria_wms;Username=vicky_admin;Password=vicky_password";
 
-// 2. Redis Configuration
-builder.Services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Connect(redisConnectionString));
+// 2. Redis Configuration (With resilience for staggered startup)
+var redisOptions = ConfigurationOptions.Parse(redisConnectionString);
+redisOptions.AbortOnConnectFail = false;
+redisOptions.ConnectTimeout = 10000; // 10s
+builder.Services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Connect(redisOptions));
 
 // Marten Configuration (Identidad Aislada por Instancia)
 builder.Services.AddMarten(opts =>
 {
-    opts.Connection(builder.Configuration.GetConnectionString("Marten") ?? postgresConnectionString);
+    opts.Connection(postgresConnectionString);
     // Aseguramos que NO haya particionamiento por tenant lógico
     opts.Events.TenancyStyle = Marten.Storage.TenancyStyle.Single; 
 }).UseLightweightSessions();
