@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider } from './context/AuthContext';
 import { LoginPage } from './features/auth/LoginPage';
 import { InventoryDashboard } from './features/inventory/InventoryDashboard';
+import { SkuMaster } from './features/inventory/SkuMaster';
 import InboundDashboard from './components/Inbound/InboundDashboard';
 import MainLayout from './components/MainLayout';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -38,6 +39,16 @@ function App() {
               <ProtectedRoute>
                 <MainLayout>
                   <InventoryDashboard />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/skus"
+            element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <SkuMaster />
                 </MainLayout>
               </ProtectedRoute>
             }

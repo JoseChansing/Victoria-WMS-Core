@@ -21,6 +21,7 @@ namespace Victoria.API.Controllers
         private readonly Victoria.Inventory.Application.Services.CycleCountService _countService;
         private readonly ApproveReceiptOverageHandler _approveReceiptOverageHandler;
         private readonly Victoria.Core.Messaging.IMessageBus _bus;
+        private readonly string _connectionString;
 
         public InventoryController(
             ReceiveLpnHandler receiveHandler, 
@@ -31,7 +32,8 @@ namespace Victoria.API.Controllers
             Victoria.Inventory.Application.Services.DispatchService dispatchService,
             Victoria.Inventory.Application.Services.CycleCountService countService,
             ApproveReceiptOverageHandler approveReceiptOverageHandler,
-            Victoria.Core.Messaging.IMessageBus bus)
+            Victoria.Core.Messaging.IMessageBus bus,
+            IConfiguration config)
         {
             _receiveHandler = receiveHandler;
             _putawayHandler = putawayHandler;
@@ -42,6 +44,34 @@ namespace Victoria.API.Controllers
             _countService = countService;
             _approveReceiptOverageHandler = approveReceiptOverageHandler;
             _bus = bus;
+            _connectionString = config["POSTGRES_CONNECTION"] ?? "Host=localhost;Database=victoria_wms;Username=vicky_admin;Password=vicky_password";
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetInventory([FromQuery] string tenantId)
+        {
+            var items = new List<object>();
+            using var conn = new Npgsql.NpgsqlConnection(_connectionString);
+            await conn.OpenAsync();
+
+            var sql = "SELECT id, sku, quantity, status, location FROM inventoryitems WHERE tenantid = @tenant";
+            using var cmd = new Npgsql.NpgsqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("tenant", tenantId);
+
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                items.Add(new
+                {
+                    Id = reader.GetString(0),
+                    Sku = reader.GetString(1),
+                    Quantity = reader.GetInt32(2),
+                    Status = reader.GetString(3),
+                    Location = reader.GetString(4)
+                });
+            }
+
+            return Ok(items);
         }
 
         [HttpPost("receipt")]

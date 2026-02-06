@@ -1,12 +1,8 @@
-import React, { useState } from 'react';
-import { Container, Paper, Typography, TextField, Button, Box, MenuItem } from '@mui/material';
+import { Container, Paper, Typography, TextField, Button, Box } from '@mui/material';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
-const TENANTS = ['PERFECTPTY', 'NATSUKI', 'PDM', 'FILTROS'];
-
 export const LoginPage: React.FC = () => {
-    const [selectedTenant, setSelectedTenant] = useState('PERFECTPTY');
     const { login } = useAuth();
     const navigate = useNavigate();
 
@@ -14,7 +10,7 @@ export const LoginPage: React.FC = () => {
         e.preventDefault();
         // Simulación de Login exitoso y obtención de JWT
         const mockToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.s2v_";
-        login(mockToken, selectedTenant);
+        login(mockToken, 'PERFECTPTY');
         navigate('/');
     };
 
@@ -26,22 +22,17 @@ export const LoginPage: React.FC = () => {
                         Victoria WMS
                     </Typography>
                     <Typography variant="body2" align="center" color="textSecondary" gutterBottom>
-                        Seleccione su Entorno de Trabajo
+                        Ambiente Exclusivo: PERFECTPTY
                     </Typography>
 
                     <form onSubmit={handleLogin}>
                         <TextField
-                            select
                             fullWidth
-                            label="Compañía (Tenant)"
-                            value={selectedTenant}
-                            onChange={(e) => setSelectedTenant(e.target.value)}
+                            label="Compañía"
+                            value="PERFECTPTY"
                             margin="normal"
-                        >
-                            {TENANTS.map((t) => (
-                                <MenuItem key={t} value={t}>{t}</MenuItem>
-                            ))}
-                        </TextField>
+                            disabled
+                        />
                         <TextField
                             fullWidth
                             label="Usuario"
