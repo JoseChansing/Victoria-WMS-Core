@@ -27,10 +27,12 @@ Write-Host "Subiendo archivos a EC2..." -ForegroundColor Yellow
 $DestPackage = $EC2_HOST + ":~/deploy-package.zip"
 $DestSql04 = $EC2_HOST + ":~/04_InboundOrders.sql"
 $DestSql05 = $EC2_HOST + ":~/05_Products.sql"
+$DestSql06 = $EC2_HOST + ":~/06_InventoryItems.sql"
 
 scp -i $KEY_PATH -o StrictHostKeyChecking=no deploy-package.zip $DestPackage
 scp -i $KEY_PATH -o StrictHostKeyChecking=no src/Victoria.Infrastructure/Persistence/Scripts/04_InboundOrders.sql $DestSql04
 scp -i $KEY_PATH -o StrictHostKeyChecking=no src/Victoria.Infrastructure/Persistence/Scripts/05_Products.sql $DestSql05
+scp -i $KEY_PATH -o StrictHostKeyChecking=no src/Victoria.Infrastructure/Persistence/Scripts/06_InventoryItems.sql $DestSql06
 
 # 3. Remote Execution
 Write-Host "3. Remote Execution..." -ForegroundColor Yellow
@@ -60,9 +62,10 @@ sleep 30
 docker run --rm \
   -v /home/ec2-user/04_InboundOrders.sql:/tmp/04.sql \
   -v /home/ec2-user/05_Products.sql:/tmp/05.sql \
+  -v /home/ec2-user/06_InventoryItems.sql:/tmp/06.sql \
   -e PGPASSWORD=vicky_password \
   postgres:15-alpine \
-  sh -c 'psql -h victoria-db.ct8iwqe86oz4.us-east-2.rds.amazonaws.com -U vicky_admin -d victoria_wms -f /tmp/04.sql && psql -h victoria-db.ct8iwqe86oz4.us-east-2.rds.amazonaws.com -U vicky_admin -d victoria_wms -f /tmp/05.sql'
+  sh -c 'psql -h victoria-db.ct8iwqe86oz4.us-east-2.rds.amazonaws.com -U vicky_admin -d victoria_wms -f /tmp/04.sql && psql -h victoria-db.ct8iwqe86oz4.us-east-2.rds.amazonaws.com -U vicky_admin -d victoria_wms -f /tmp/05.sql && psql -h victoria-db.ct8iwqe86oz4.us-east-2.rds.amazonaws.com -U vicky_admin -d victoria_wms -f /tmp/06.sql'
 
 echo '>>> [VERIFICACION] Estado de la Base de Datos:'
 docker run --rm \

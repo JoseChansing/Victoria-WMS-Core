@@ -63,11 +63,11 @@ namespace Victoria.API.Controllers
             {
                 items.Add(new
                 {
-                    Id = reader.GetString(0),
-                    Sku = reader.GetString(1),
-                    Quantity = reader.GetInt32(2),
-                    Status = reader.GetString(3),
-                    Location = reader.GetString(4)
+                    Id = reader.IsDBNull(0) ? "" : reader.GetString(0),
+                    Sku = reader.IsDBNull(1) ? "" : reader.GetString(1),
+                    Quantity = reader.IsDBNull(2) ? 0 : reader.GetInt32(2),
+                    Status = reader.IsDBNull(3) ? "" : reader.GetString(3),
+                    Location = reader.IsDBNull(4) ? "" : reader.GetString(4)
                 });
             }
 

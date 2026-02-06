@@ -36,10 +36,10 @@ namespace Victoria.API.Controllers
             {
                 var product = new Product
                 {
-                    Id = reader.GetString(0),
-                    Sku = reader.GetString(1),
-                    Name = reader.GetString(2),
-                    TenantId = reader.GetString(3),
+                    Id = reader.IsDBNull(0) ? "" : reader.GetString(0),
+                    Sku = reader.IsDBNull(1) ? "" : reader.GetString(1),
+                    Name = reader.IsDBNull(2) ? "" : reader.GetString(2),
+                    TenantId = reader.IsDBNull(3) ? "" : reader.GetString(3),
                     OdooId = reader.IsDBNull(4) ? 0 : reader.GetInt32(4)
                 };
                 products.Add(product);
