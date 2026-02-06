@@ -43,26 +43,52 @@ namespace Victoria.Infrastructure.Integration.Odoo
 
             _logger?.LogInformation("[OdooSync] Persisting {Type} Picking: {Ref} for {Tenant}", type, odooPicking.Name, tenantId);
 
+            using var conn = new NpgsqlConnection(_connectionString);
+            await conn.OpenAsync();
+
+            var lines = new List<InboundLine>();
+            foreach (var l in (odooPicking.Lines ?? new()))
+            {
+                var line = new InboundLine
+                {
+                    ExpectedQty = (int)l.Product_Uom_Qty,
+                    ReceivedQty = 0
+                };
+
+                // BUSCAR SKU Y METADATOS EN DB LOCAL
+                var sqlProd = "SELECT Sku, Name, Data->>'ImageSource' as ImageSource FROM Products WHERE OdooId = @odooId AND TenantId = @tenant LIMIT 1";
+                using var cmdProd = new NpgsqlCommand(sqlProd, conn);
+                cmdProd.Parameters.AddWithValue("odooId", l.Product_Id);
+                cmdProd.Parameters.AddWithValue("tenant", tenantId);
+                
+                using (var readerProd = await cmdProd.ExecuteReaderAsync())
+                {
+                    if (await readerProd.ReadAsync())
+                    {
+                        line.Sku = readerProd.GetString(0);
+                        line.ProductName = readerProd.GetString(1);
+                        line.ImageSource = readerProd.IsDBNull(2) ? null : readerProd.GetString(2);
+                    }
+                    else
+                    {
+                        line.Sku = $"ODOO-{l.Product_Id}";
+                        _logger.LogWarning("[OdooSync] Product with OdooId {Id} not found in DB. Using fallback SKU.", l.Product_Id);
+                    }
+                }
+                lines.Add(line);
+            }
+
             var order = new InboundOrder
             {
                 Id = odooPicking.Id.ToString(),
                 OrderNumber = odooPicking.Name,
-                Supplier = "Odoo Supplier", // Podríamos buscar el partner_id si lo pidiéramos
+                Supplier = "Odoo Supplier",
                 Status = "Pending",
                 TenantId = tenantId,
-                TotalUnits = 0, // Simplificación: las unidades vendrán de las líneas
-                Lines = (odooPicking.Lines ?? new()).Select(l => new InboundLine {
-                    Sku = $"ODOO-{l.Product_Id}", // Fallback inicial. Podríamos cruzar con DB Products.
-                    ExpectedQty = (int)l.Product_Uom_Qty,
-                    ReceivedQty = 0
-                }).ToList()
+                Lines = lines,
+                TotalUnits = lines.Sum(l => l.ExpectedQty)
             };
 
-            order.TotalUnits = order.Lines.Sum(l => l.ExpectedQty);
-
-            using var conn = new NpgsqlConnection(_connectionString);
-            await conn.OpenAsync();
-            
             var json = JsonSerializer.Serialize(order);
             var sql = @"
                 INSERT INTO InboundOrders (Id, OrderNumber, Supplier, Status, Date, TotalUnits, TenantId, Data)
