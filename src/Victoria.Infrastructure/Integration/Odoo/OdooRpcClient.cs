@@ -7,15 +7,10 @@ using System.Xml;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
+using Victoria.Core.Interfaces;
+
 namespace Victoria.Infrastructure.Integration.Odoo
 {
-    public interface IOdooRpcClient
-    {
-        Task<int> AuthenticateAsync();
-        Task<List<T>> SearchAndReadAsync<T>(string model, object[][] domain, string[] fields) where T : new();
-        Task<bool> ExecuteAsync(string model, string method, object[] ids, Dictionary<string, object>? values = null);
-    }
-
     public class OdooRpcClient : IOdooRpcClient
     {
         private readonly HttpClient _httpClient;
@@ -30,7 +25,7 @@ namespace Victoria.Infrastructure.Integration.Odoo
         {
             _httpClient = httpClient;
             _logger = logger;
-            _url = (config["Odoo:Url"] ?? "").Trim();
+            _url = (config["Odoo:Url"] ?? "").Trim().TrimEnd('/');
             _db = (config["Odoo:Db"] ?? "").Trim();
             _user = (config["Odoo:User"] ?? "").Trim();
             _apiKey = (config["Odoo:ApiKey"] ?? "").Trim();
@@ -196,6 +191,23 @@ namespace Victoria.Infrastructure.Integration.Odoo
                     if (part is string s) sb.Append($"<value><string>{System.Security.SecurityElement.Escape(s)}</string></value>");
                     else if (part is bool b) sb.Append($"<value><boolean>{(b ? "1" : "0")}</boolean></value>");
                     else if (part is string[] arr) sb.Append(BuildFieldsXml(arr));
+                    else if (part is bool[] bArr) 
+                    {
+                        sb.Append("<value><array><data>");
+                        foreach(var v in bArr) sb.Append($"<value><boolean>{(v ? "1" : "0")}</boolean></value>");
+                        sb.Append("</data></array></value>");
+                    }
+                    else if (part is object[] oArr)
+                    {
+                        sb.Append("<value><array><data>");
+                        foreach(var v in oArr) 
+                        {
+                            if (v is string strVal) sb.Append($"<value><string>{System.Security.SecurityElement.Escape(strVal)}</string></value>");
+                            else if (v is bool bv) sb.Append($"<value><boolean>{(bv ? "1" : "0")}</boolean></value>");
+                            else sb.Append($"<value><int>{v}</int></value>");
+                        }
+                        sb.Append("</data></array></value>");
+                    }
                     else sb.Append($"<value><int>{part}</int></value>");
                 }
                 sb.Append("</data></array></value>");
@@ -215,7 +227,137 @@ namespace Victoria.Infrastructure.Integration.Odoo
         public async Task<bool> ExecuteAsync(string model, string method, object[] ids, Dictionary<string, object>? values = null)
         {
             int uid = await AuthenticateAsync();
-            return uid > 0;
+            if (uid <= 0) return false;
+
+            var xml = BuildExecuteKwXml(model, method, ids, values);
+            var response = await SendAsync("object", xml);
+            
+            // Si retorna un fault, es false
+            if (response.Contains("<fault>")) return false;
+            
+            // Verificar si el valor es <boolean>1</boolean> o un <int> > 0
+            return response.Contains("<boolean>1</boolean>") || ParseIntResponse(response) > 0;
+        }
+
+        public async Task<object?> ExecuteActionAsync(string model, string method, object[] ids, Dictionary<string, object>? values = null)
+        {
+            int uid = await AuthenticateAsync();
+            if (uid <= 0) return null;
+
+            var xml = BuildExecuteKwXml(model, method, ids, values);
+            var response = await SendAsync("object", xml);
+
+            var doc = new XmlDocument();
+            doc.LoadXml(response);
+
+            var fault = doc.SelectSingleNode("//fault");
+            if (fault != null) return null;
+
+            var valueNode = doc.SelectSingleNode("//value/*");
+            return ParseValueNode(valueNode);
+        }
+
+        private string BuildExecuteKwXml(string model, string method, object[] ids, Dictionary<string, object>? values = null)
+        {
+            var idsXml = new StringBuilder("<array><data>");
+            foreach (var id in ids) 
+            {
+                idsXml.Append("<value>");
+                idsXml.Append(BuildValueXml(id));
+                idsXml.Append("</value>");
+            }
+            idsXml.Append("</data></array>");
+
+            var kwargsXml = "";
+            if (values != null && values.Count > 0)
+            {
+                kwargsXml = BuildStructXml(values);
+            }
+
+            return $@"<?xml version=""1.0""?>
+<methodCall>
+<methodName>execute_kw</methodName>
+<params>
+<param><value><string>{System.Security.SecurityElement.Escape(_db)}</string></value></param>
+<param><value><int>{_uid}</int></value></param>
+<param><value><string>{System.Security.SecurityElement.Escape(_apiKey)}</string></value></param>
+<param><value><string>{model}</string></value></param>
+<param><value><string>{method}</string></value></param>
+<param><value>{idsXml}</value></param>
+{(string.IsNullOrEmpty(kwargsXml) ? "" : $"<param><value>{kwargsXml}</value></param>")}
+</params>
+</methodCall>";
+        }
+
+        private string BuildStructXml(Dictionary<string, object> values)
+        {
+            var sb = new StringBuilder("<struct>");
+            foreach (var kv in values)
+            {
+                sb.Append("<member>");
+                sb.Append($"<name>{kv.Key}</name>");
+                sb.Append("<value>");
+                sb.Append(BuildValueXml(kv.Value));
+                sb.Append("</value>");
+                sb.Append("</member>");
+            }
+            sb.Append("</struct>");
+            return sb.ToString();
+        }
+
+        private string BuildValueXml(object? value)
+        {
+            if (value == null) return "<nil/>";
+            if (value is string s) return $"<string>{System.Security.SecurityElement.Escape(s)}</string>";
+            if (value is bool b) return $"<boolean>{(b ? "1" : "0")}</boolean>";
+            if (value is int i) return $"<int>{i}</int>";
+            if (value is double d) return $"<double>{d.ToString(System.Globalization.CultureInfo.InvariantCulture)}</double>";
+            if (value is long l) return $"<int>{l}</int>";
+            if (value is Dictionary<string, object> dict) return BuildStructXml(dict);
+            if (value is IEnumerable<object> list)
+            {
+                var sb = new StringBuilder("<array><data>");
+                foreach (var item in list)
+                {
+                    sb.Append("<value>");
+                    sb.Append(BuildValueXml(item));
+                    sb.Append("</value>");
+                }
+                sb.Append("</data></array>");
+                return sb.ToString();
+            }
+            return $"<string>{System.Security.SecurityElement.Escape(value.ToString() ?? "")}</string>";
+        }
+
+        private object? ParseValueNode(XmlNode? node)
+        {
+            if (node == null) return null;
+            
+            switch (node.Name)
+            {
+                case "string": return node.InnerText;
+                case "int": 
+                case "i4": return int.Parse(node.InnerText);
+                case "boolean": return node.InnerText == "1";
+                case "double": return double.Parse(node.InnerText);
+                case "struct":
+                    var dict = new Dictionary<string, object?>();
+                    foreach (XmlNode member in node.SelectNodes("member"))
+                    {
+                        var name = member.SelectSingleNode("name")?.InnerText;
+                        var val = member.SelectSingleNode("value/*");
+                        if (name != null) dict[name] = ParseValueNode(val);
+                    }
+                    return dict;
+                case "array":
+                    var list = new List<object?>();
+                    foreach (XmlNode val in node.SelectNodes("data/value/*"))
+                    {
+                        list.Add(ParseValueNode(val));
+                    }
+                    return list;
+                default: return node.InnerText;
+            }
         }
 
         private async Task<string> SendAsync(string service, string xml)
@@ -227,8 +369,18 @@ namespace Victoria.Infrastructure.Integration.Odoo
             if (!_httpClient.DefaultRequestHeaders.Contains("User-Agent"))
                 _httpClient.DefaultRequestHeaders.Add("User-Agent", "VictoriaWMS/1.0");
 
-            var response = await _httpClient.PostAsync($"{_url}/xmlrpc/2/{service}", content);
-            response.EnsureSuccessStatusCode();
+            var requestUrl = $"{_url}/xmlrpc/2/{service}";
+            _logger.LogInformation("[ODOO] POST {RequestUrl}", requestUrl);
+            var response = await _httpClient.PostAsync(requestUrl, content);
+            try 
+            {
+                response.EnsureSuccessStatusCode();
+            }
+            catch (HttpRequestException ex)
+            {
+                var responseBody = await response.Content.ReadAsStringAsync();
+                throw new Exception($"Odoo Request Failed: {response.StatusCode} at {requestUrl}. Body: {responseBody}", ex);
+            }
             return await response.Content.ReadAsStringAsync();
         }
 

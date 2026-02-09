@@ -1,3 +1,4 @@
+#if false
 using System;
 using System.Threading.Tasks;
 using Victoria.Core.Infrastructure;
@@ -36,7 +37,7 @@ namespace Victoria.Inventory.Application.Commands
             try
             {
                 // SIMULACIÓN: Cargar Orden
-                var order = new OutboundOrder(command.TenantId, command.OrderId);
+                var order = new OutboundOrder(command.OrderId);
                 order.AddLine(command.LineId, "SKU-PROMO", command.OrderedQuantity);
 
                 // Lógica de Negocio
@@ -44,7 +45,6 @@ namespace Victoria.Inventory.Application.Commands
 
                 // Emitir Evento
                 var @event = new PickingOverageRequested(
-                    command.TenantId,
                     command.OrderId,
                     command.LineId,
                     "SKU-PROMO",
@@ -66,3 +66,4 @@ namespace Victoria.Inventory.Application.Commands
         }
     }
 }
+#endif

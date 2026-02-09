@@ -5,18 +5,18 @@ using Victoria.Core;
 namespace Victoria.Inventory.Domain.Events
 {
     public record LpnCreated(
-        string TenantId,
         string LpnId,
         string LpnCode,
         string Sku,
+        Aggregates.LpnType Type,
         int Quantity,
+        Victoria.Inventory.Domain.ValueObjects.PhysicalAttributes PhysicalAttributes,
         DateTime OccurredOn,
         string CreatedBy,
         string StationId
     ) : IDomainEvent;
 
     public record LpnReceived(
-        string TenantId,
         string LpnId,
         string OrderId,
         DateTime OccurredOn,
@@ -25,7 +25,6 @@ namespace Victoria.Inventory.Domain.Events
     ) : IDomainEvent;
 
     public record LpnLocationChanged(
-        string TenantId,
         string LpnId,
         string NewLocation,
         string OldLocation,
@@ -35,7 +34,6 @@ namespace Victoria.Inventory.Domain.Events
     ) : IDomainEvent;
 
     public record PutawayCompleted(
-        string TenantId,
         string LpnId,
         string LocationCode,
         DateTime OccurredOn,
@@ -44,7 +42,6 @@ namespace Victoria.Inventory.Domain.Events
     ) : IDomainEvent;
 
     public record LpnAllocated(
-        string TenantId,
         string LpnId,
         string OrderId,
         string Sku,
@@ -54,7 +51,6 @@ namespace Victoria.Inventory.Domain.Events
     ) : IDomainEvent;
 
     public record LpnPicked(
-        string TenantId,
         string LpnId,
         DateTime OccurredOn,
         string CreatedBy,
@@ -62,7 +58,6 @@ namespace Victoria.Inventory.Domain.Events
     ) : IDomainEvent;
 
     public record PackingCompleted(
-        string TenantId,
         string MasterLpnId,
         IEnumerable<string> ChildLpnIds,
         double TotalWeight,
@@ -72,7 +67,6 @@ namespace Victoria.Inventory.Domain.Events
     ) : IDomainEvent;
 
     public record DispatchConfirmed(
-        string TenantId,
         string OrderId,
         string DockDoor,
         IEnumerable<string> DispatchedLpnIds,
@@ -82,7 +76,6 @@ namespace Victoria.Inventory.Domain.Events
     ) : IDomainEvent;
 
     public record InventoryCountCompleted(
-        string TenantId,
         string LpnId,
         int ExpectedQuantity,
         int CountedQuantity,
@@ -92,7 +85,6 @@ namespace Victoria.Inventory.Domain.Events
     ) : IDomainEvent;
 
     public record InventoryAdjusted(
-        string TenantId,
         string LpnId,
         int OldQuantity,
         int NewQuantity,
@@ -103,7 +95,6 @@ namespace Victoria.Inventory.Domain.Events
     ) : IDomainEvent;
 
     public record LpnQuarantined(
-        string TenantId,
         string LpnId,
         string Reason,
         DateTime OccurredOn,
@@ -111,7 +102,6 @@ namespace Victoria.Inventory.Domain.Events
         string StationId
     ) : IDomainEvent;
     public record ReceiptClosedWithShortage(
-        string TenantId,
         string OrderId,
         string Sku,
         int RequestedQuantity,
@@ -122,7 +112,6 @@ namespace Victoria.Inventory.Domain.Events
     ) : IDomainEvent;
 
     public record PickShortageDetected(
-        string TenantId,
         string LpnId,
         string OrderId,
         int ExpectedQuantity,

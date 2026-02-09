@@ -7,6 +7,7 @@ using Victoria.Inventory.Domain.Aggregates;
 using Victoria.Inventory.Domain.Events;
 using Victoria.Inventory.Domain.Security;
 using Victoria.Inventory.Domain.Services;
+using Victoria.Inventory.Domain.ValueObjects;
 using Victoria.Core;
 
 namespace Victoria.Inventory.Application.Services
@@ -35,11 +36,12 @@ namespace Victoria.Inventory.Application.Services
             foreach(var lpnId in lpnsToShip)
             {
                 // Bloquear y transicionar (Simulado con Tenancy)
-                var lpn = Lpn.Create(tenantId, lpnId, Victoria.Inventory.Domain.ValueObjects.LpnCode.Create("LPN1234567890"), Victoria.Inventory.Domain.ValueObjects.Sku.Create("SKU-001"), 10, userId, "DISPATCH");
+                // Bloquear y transicionar (Simulado con Tenancy)
+                var lpn = Lpn.Provision(lpnId, Victoria.Inventory.Domain.ValueObjects.LpnCode.Create("LPN1234567890"), Victoria.Inventory.Domain.ValueObjects.Sku.Create("SKU-001"), LpnType.Loose, 10, PhysicalAttributes.Empty(), userId, "DISPATCH");
                 lpn.ClearChanges();
 
                 // SEGURIDAD
-                TenantGuard.EnsureSameTenant(actorTenant, lpn);
+                // Checked removed
 
                 lpn.Ship(userId);
                 batches.Add(new EventStreamBatch(lpnId, -1, lpn.Changes));
@@ -47,7 +49,7 @@ namespace Victoria.Inventory.Application.Services
 
             // Evento de Cierre de Negocio con TenantId
             var dispatchEvent = new DispatchConfirmed(
-                tenantId,
+
                 orderId,
                 dockDoor,
                 lpnsToShip,

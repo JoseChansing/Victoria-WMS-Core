@@ -6,22 +6,36 @@ using Victoria.Core;
 
 namespace Victoria.Inventory.Domain.Aggregates
 {
+    public enum LocationProfile
+    {
+        Reserve,
+        Picking
+    }
+
     public sealed class Location
     {
-        public LocationCode Code { get; private set; }
-        public TenantId Tenant { get; private set; }
-        public LocationStatus Status { get; private set; }
-        public LpnCode? AssignedLpn { get; private set; }
+        public string Id { get; set; } = string.Empty;
+        public LocationCode Code { get; set; }
+        public LocationStatus Status { get; set; }
+        public LocationProfile Profile { get; set; }
+        public bool IsPickable { get; set; }
+        public LpnCode? AssignedLpn { get; set; }
+
+        // Metadata additions
+        public int PickingSequence { get; set; }
+        public double MaxWeight { get; set; }
+        public double MaxVolume { get; set; }
+        public string Barcode { get; set; } = string.Empty;
 
         private readonly List<IDomainEvent> _changes = new();
         public IReadOnlyCollection<IDomainEvent> Changes => _changes.AsReadOnly();
 
-        private Location() { }
+        public Location() { }
 
-        public static Location Create(string tenantId, LocationCode code)
+        public static Location Create(LocationCode code, LocationProfile profile, bool isPickable)
         {
             var loc = new Location();
-            var @event = new LocationCreated(tenantId, code.Value, code.Zone, DateTime.UtcNow, "SYS", "SYS");
+            var @event = new LocationCreated(code.Value, code.Zone, profile, isPickable, DateTime.UtcNow, "SYS", "SYS");
             loc.Apply(@event);
             loc._changes.Add(@event);
             return loc;
@@ -32,7 +46,14 @@ namespace Victoria.Inventory.Domain.Aggregates
             if (Status != LocationStatus.Empty)
                 throw new InvalidOperationException($"Location {Code} is not empty. Current status: {Status}");
 
-            var @event = new LocationAssigned(Tenant.Value, Code.Value, lpnCode.Value, DateTime.UtcNow, userId, stationId);
+            var @event = new LocationAssigned(Code.Value, lpnCode.Value, DateTime.UtcNow, userId, stationId);
+            Apply(@event);
+            _changes.Add(@event);
+        }
+
+        public void UpdateMetadata(int gatheringSequence, double maxWeight, double maxVolume, string barcode, string userId, string stationId)
+        {
+            var @event = new LocationMetadataUpdated(Code.Value, gatheringSequence, maxWeight, maxVolume, barcode, DateTime.UtcNow, userId, stationId);
             Apply(@event);
             _changes.Add(@event);
         }
@@ -42,13 +63,21 @@ namespace Victoria.Inventory.Domain.Aggregates
             switch (@event)
             {
                 case LocationCreated e:
+                    Id = e.LocationCode;
                     Code = LocationCode.Create(e.LocationCode);
                     Status = LocationStatus.Empty;
-                    Tenant = TenantId.Create(e.TenantId);
+                    Profile = e.Profile;
+                    IsPickable = e.IsPickable;
                     break;
                 case LocationAssigned e:
                     AssignedLpn = LpnCode.Create(e.LpnCode);
                     Status = LocationStatus.Occupied;
+                    break;
+                case LocationMetadataUpdated e:
+                    PickingSequence = e.PickingSequence;
+                    MaxWeight = e.MaxWeight;
+                    MaxVolume = e.MaxVolume;
+                    Barcode = e.Barcode;
                     break;
             }
         }

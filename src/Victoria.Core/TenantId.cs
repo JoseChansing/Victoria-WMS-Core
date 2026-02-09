@@ -5,9 +5,11 @@ namespace Victoria.Core
 {
     public sealed class TenantId : ValueObject
     {
-        public string Value { get; }
+        public string Value { get; set; }
 
-        private TenantId(string value)
+        private TenantId() { } // Marten
+
+        public TenantId(string value)
         {
             if (string.IsNullOrWhiteSpace(value))
                 throw new ArgumentException("TenantId cannot be empty.");

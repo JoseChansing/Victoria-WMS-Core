@@ -2,9 +2,14 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider } from './context/AuthContext';
 import { LoginPage } from './features/auth/LoginPage';
 import { InventoryDashboard } from './features/inventory/InventoryDashboard';
+import { InventoryByItem } from './features/inventory/InventoryByItem';
+import { InventoryByLocation } from './features/inventory/InventoryByLocation';
 import { SkuMaster } from './features/inventory/SkuMaster';
+import { LocationMaster } from './features/inventory/LocationMaster';
 import InboundDashboard from './components/Inbound/InboundDashboard';
+import ReceiveStation from './components/Inbound/ReceiveStation';
 import MainLayout from './components/MainLayout';
+import OutboundDashboard from './features/outbound/OutboundDashboard';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 function App() {
@@ -34,6 +39,36 @@ function App() {
             }
           />
           <Route
+            path="/inbound/receive/rfid/:orderId"
+            element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <ReceiveStation mode="rfid" />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/outbound"
+            element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <OutboundDashboard />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/inbound/receive/standard/:orderId"
+            element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <ReceiveStation mode="standard" />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/inventory"
             element={
               <ProtectedRoute>
@@ -49,6 +84,46 @@ function App() {
               <ProtectedRoute>
                 <MainLayout>
                   <SkuMaster />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/locations"
+            element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <LocationMaster />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/inventory-item"
+            element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <InventoryByItem />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/inventory-master"
+            element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <InventoryDashboard />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/inventory-location"
+            element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <InventoryByLocation />
                 </MainLayout>
               </ProtectedRoute>
             }

@@ -1,32 +1,60 @@
 using System;
 using System.Collections.Generic;
+using Newtonsoft.Json;
 using Victoria.Inventory.Domain.ValueObjects;
 using Victoria.Inventory.Domain.Events;
 using Victoria.Core;
 
 namespace Victoria.Inventory.Domain.Aggregates
 {
+    public enum LpnType
+    {
+        Pallet,
+        Loose
+    }
+
     public sealed class Lpn
     {
-        public string Id { get; private set; }
-        public TenantId Tenant { get; private set; }
-        public LpnCode Code { get; private set; }
-        public Sku Sku { get; private set; }
-        public int Quantity { get; private set; }
-        public LpnStatus Status { get; private set; }
-        public string? CurrentLocation { get; private set; }
-        public string? SelectedOrderId { get; private set; }
-        public string? ParentLpnId { get; private set; }
+        [JsonProperty] public string Id { get; private set; }
+        [JsonProperty] public LpnCode Code { get; private set; }
+        [JsonProperty] public Sku Sku { get; private set; }
+        [JsonProperty] public LpnType Type { get; private set; }
+        [JsonProperty] public int Quantity { get; private set; }
+        [JsonProperty] public int AllocatedQuantity { get; private set; } // For partial reservations
+        [JsonProperty] public PhysicalAttributes PhysicalAttributes { get; private set; } = PhysicalAttributes.Empty();
+        [JsonProperty] public LpnStatus Status { get; private set; }
+        [JsonProperty] public string? CurrentLocationId { get; private set; }
+        [JsonProperty] public string? SelectedOrderId { get; private set; }
+        [JsonProperty] public string? ParentLpnId { get; private set; }
+        [JsonProperty] public DateTime CreatedAt { get; private set; }
         
         private readonly List<IDomainEvent> _changes = new();
         public IReadOnlyCollection<IDomainEvent> Changes => _changes.AsReadOnly();
 
-        private Lpn() { } // For pattern matching or internal use
-
-        public static Lpn Create(string tenantId, string id, LpnCode code, Sku sku, int quantity, string userId, string stationId)
+        [JsonConstructor]
+        private Lpn(string id, LpnCode code, Sku sku, LpnType type, int quantity, PhysicalAttributes physicalAttributes, LpnStatus status, string? currentLocationId, string? selectedOrderId, string? parentLpnId, DateTime createdAt)
         {
+            Id = id;
+            Code = code;
+            Sku = sku;
+            Type = type;
+            Quantity = quantity;
+            PhysicalAttributes = physicalAttributes;
+            Status = status;
+            CurrentLocationId = currentLocationId;
+            SelectedOrderId = selectedOrderId;
+            ParentLpnId = parentLpnId;
+            CreatedAt = createdAt;
+        }
+
+        private Lpn() { } // Marten fallback
+
+        public static Lpn Provision(string id, LpnCode code, Sku sku, LpnType type, int quantity, PhysicalAttributes physicalAttributes, string userId, string stationId)
+        {
+            if (sku == null) throw new ArgumentException("Un LPN no puede existir sin un SKU asociado.");
+
             var lpn = new Lpn();
-            var @event = new LpnCreated(tenantId, id, code.Value, sku.Value, quantity, DateTime.UtcNow, userId, stationId);
+            var @event = new LpnCreated(id, code.Value, sku.Value, type, quantity, physicalAttributes, DateTime.UtcNow, userId, stationId);
             lpn.Apply(@event);
             lpn._changes.Add(@event);
             return lpn;
@@ -34,18 +62,18 @@ namespace Victoria.Inventory.Domain.Aggregates
 
         public void Receive(string orderId, string userId, string stationId)
         {
-            var @event = new LpnReceived(Tenant.Value, Id, orderId, DateTime.UtcNow, userId, stationId);
+            var @event = new LpnReceived(Id, orderId, DateTime.UtcNow, userId, stationId);
             Apply(@event);
             _changes.Add(@event);
         }
 
         public void Putaway(string targetLocation, string userId, string stationId)
         {
-            var moveEvent = new LpnLocationChanged(Tenant.Value, Id, targetLocation, CurrentLocation ?? "RECEIPT", DateTime.UtcNow, userId, stationId);
+            var moveEvent = new LpnLocationChanged(Id, targetLocation, CurrentLocationId ?? "RECEIPT", DateTime.UtcNow, userId, stationId);
             Apply(moveEvent);
             _changes.Add(moveEvent);
 
-            var putawayEvent = new PutawayCompleted(Tenant.Value, Id, targetLocation, DateTime.UtcNow, userId, stationId);
+            var putawayEvent = new PutawayCompleted(Id, targetLocation, DateTime.UtcNow, userId, stationId);
             Apply(putawayEvent);
             _changes.Add(putawayEvent);
         }
@@ -58,9 +86,23 @@ namespace Victoria.Inventory.Domain.Aggregates
             if (Sku != sku)
                 throw new ArgumentException($"SKU mismatch. Expected: {Sku}, Requested: {sku}");
 
-            var @event = new LpnAllocated(Tenant.Value, Id, orderId, sku.Value, DateTime.UtcNow, userId, stationId);
+            var @event = new LpnAllocated(Id, orderId, sku.Value, DateTime.UtcNow, userId, stationId);
             Apply(@event);
             _changes.Add(@event);
+        }
+
+        public void ReserveQuantity(int qty)
+        {
+            if (AllocatedQuantity + qty > Quantity)
+                throw new InvalidOperationException($"Cannot reserve {qty}. Available: {Quantity - AllocatedQuantity}");
+            
+            AllocatedQuantity += qty;
+        }
+
+        public void ReleaseReservation(int qty)
+        {
+            AllocatedQuantity -= qty;
+            if (AllocatedQuantity < 0) AllocatedQuantity = 0;
         }
 
         public void Pick(string userId, string stationId)
@@ -68,7 +110,7 @@ namespace Victoria.Inventory.Domain.Aggregates
             if (Status != LpnStatus.Allocated)
                 throw new InvalidOperationException($"LPN must be Allocated before Picking. Current status: {Status}");
 
-            var @event = new LpnPicked(Tenant.Value, Id, DateTime.UtcNow, userId, stationId);
+            var @event = new LpnPicked(Id, DateTime.UtcNow, userId, stationId);
             Apply(@event);
             _changes.Add(@event);
         }
@@ -91,66 +133,110 @@ namespace Victoria.Inventory.Domain.Aggregates
 
         public void ReportCount(int currentQuantity, string userId, string stationId)
         {
-            var @event = new InventoryCountCompleted(Tenant.Value, Id, Quantity, currentQuantity, DateTime.UtcNow, userId, stationId);
+            var @event = new InventoryCountCompleted(Id, Quantity, currentQuantity, DateTime.UtcNow, userId, stationId);
             Apply(@event);
             _changes.Add(@event);
         }
 
         public void AdjustQuantity(int newQuantity, string reason, string userId, string stationId)
         {
-            var @event = new InventoryAdjusted(Tenant.Value, Id, Quantity, newQuantity, reason, DateTime.UtcNow, userId, stationId);
+            var @event = new InventoryAdjusted(Id, Quantity, newQuantity, reason, DateTime.UtcNow, userId, stationId);
+            Apply(@event);
+            _changes.Add(@event);
+        }
+
+        public void AddQuantity(int quantity, string userId, string stationId)
+        {
+            if (Type != LpnType.Loose)
+                throw new InvalidOperationException("Solo se puede agregar cantidad a LPNs de tipo Loose. Los Pallets son unidades cerradas.");
+
+            var newQuantity = Quantity + quantity;
+            var @event = new InventoryAdjusted(Id, Quantity, newQuantity, "CONSOLIDATION_RECEIPT", DateTime.UtcNow, userId, stationId);
             Apply(@event);
             _changes.Add(@event);
         }
 
         public void Quarantine(string reason, string userId, string stationId)
         {
-            var @event = new LpnQuarantined(Tenant.Value, Id, reason, DateTime.UtcNow, userId, stationId);
+            var @event = new LpnQuarantined(Id, reason, DateTime.UtcNow, userId, stationId);
             Apply(@event);
             _changes.Add(@event);
         }
 
-        private void Apply(IDomainEvent @event)
+        public void Apply(LpnCreated e)
         {
-            switch (@event)
+            Id = e.LpnId;
+            Code = LpnCode.Create(e.LpnCode);
+            Sku = Sku.Create(e.Sku);
+            Type = e.Type;
+            Quantity = e.Quantity;
+            PhysicalAttributes = e.PhysicalAttributes;
+            Status = LpnStatus.Created;
+            CreatedAt = e.OccurredOn;
+        }
+
+        public void Apply(LpnReceived e)
+        {
+            Status = LpnStatus.Received;
+            SelectedOrderId = e.OrderId;
+        }
+
+        public void Apply(LpnLocationChanged e)
+        {
+            CurrentLocationId = e.NewLocation;
+        }
+
+        public void Apply(PutawayCompleted e)
+        {
+            Status = LpnStatus.Putaway;
+        }
+
+        public void Apply(LpnAllocated e)
+        {
+            Status = LpnStatus.Allocated;
+            SelectedOrderId = e.OrderId;
+        }
+
+        public void Apply(LpnPicked e)
+        {
+            Status = LpnStatus.Picked;
+        }
+
+        public void Apply(PackingCompleted e)
+        {
+            Status = LpnStatus.Putaway; // Los contenedores maestros nacen ubicables o en staging
+        }
+
+        public void Apply(InventoryCountCompleted e)
+        {
+            // El conteo por sí solo no cambia estado, solo audita
+        }
+
+        public void Apply(InventoryAdjusted e)
+        {
+            Quantity = e.NewQuantity;
+        }
+
+        public void Apply(LpnQuarantined e)
+        {
+            Status = LpnStatus.Quarantine;
+        }
+
+        public void Apply(InventoryImportedFromOdoo e)
+        {
+            if (Status == LpnStatus.Created || string.IsNullOrEmpty(Id)) 
             {
-                case LpnCreated e:
-                    Id = e.LpnId;
-                    Tenant = TenantId.Create(e.TenantId);
-                    Code = LpnCode.Create(e.LpnCode);
-                    Sku = Sku.Create(e.Sku);
-                    Quantity = e.Quantity;
-                    Status = LpnStatus.Created;
-                    break;
-                case LpnReceived e:
-                    Status = LpnStatus.Received;
-                    break;
-                case LpnLocationChanged e:
-                    CurrentLocation = e.NewLocation;
-                    break;
-                case PutawayCompleted e:
-                    Status = LpnStatus.Putaway;
-                    break;
-                case LpnAllocated e:
-                    Status = LpnStatus.Allocated;
-                    SelectedOrderId = e.OrderId;
-                    break;
-                case LpnPicked e:
-                    Status = LpnStatus.Picked;
-                    break;
-                case PackingCompleted e:
-                    Status = LpnStatus.Putaway; // Los contenedores maestros nacen ubicables o en staging
-                    break;
-                case InventoryCountCompleted e:
-                    // El conteo por sí solo no cambia estado, solo audita
-                    break;
-                case InventoryAdjusted e:
-                    Quantity = e.NewQuantity;
-                    break;
-                case LpnQuarantined e:
-                    Status = LpnStatus.Quarantine;
-                    break;
+                Id = e.LpnId;
+                Code = LpnCode.Create(e.LpnId);
+                Sku = Sku.Create(e.Sku);
+                Type = LpnType.Loose;
+                PhysicalAttributes = PhysicalAttributes.Empty();
+                Status = LpnStatus.Putaway;
+                CurrentLocationId = e.TargetLocation;
+                CreatedAt = e.ImportDate;
+                Quantity = 0; // Initialize for addition
             }
+            Quantity += e.Quantity; 
         }
 
         public void ClearChanges() => _changes.Clear();

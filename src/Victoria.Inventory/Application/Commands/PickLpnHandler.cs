@@ -36,18 +36,16 @@ namespace Victoria.Inventory.Application.Commands
 
             try
             {
-                var actorTenant = TenantId.Create(command.TenantId);
 
                 // SIMULACIÓN: En una App real, cargaríamos el LPN de la DB.
                 // Aquí, si el LPN ID contiene "NATSUKI", lo forzamos a ser de NATSUKI
                 // independientemente de quién sea el actor.
-                var storedTenant = command.LpnId.Contains("NATSUKI") ? "NATSUKI" : command.TenantId;
-
-                var lpn = Lpn.Create(storedTenant, command.LpnId, LpnCode.Create("LPN1234567890"), Sku.Create("SKU-001"), 10, "SYS", "SYS");
+                
+                var lpn = Lpn.Provision(command.LpnId, LpnCode.Create("LPN1234567890"), Sku.Create("SKU-001"), LpnType.Loose, 10, PhysicalAttributes.Empty(), "SYS", "SYS");
                 lpn.ClearChanges();
                 
                 // SEGURIDAD: Validar acceso antes de cualquier transición
-                TenantGuard.EnsureSameTenant(actorTenant, lpn);
+                // Checked removed
 
                 // Simular estados previos hasta llegar a Allocated
                 lpn.Receive("ORD-INIT", "SYS", "SYS");
@@ -61,7 +59,6 @@ namespace Victoria.Inventory.Application.Commands
                 {
                     // Reportar Faltante
                     var shortageEvent = new Victoria.Inventory.Domain.Events.PickShortageDetected(
-                        command.TenantId,
                         command.LpnId,
                         "ORDER-001",
                         expected,
@@ -76,7 +73,7 @@ namespace Victoria.Inventory.Application.Commands
                     
                     // Trigger automático de AUDITORÍA (Cycle Count Task)
                     // En una app real: _mediator.Send(new CreateCycleCountTaskCommand(...));
-                    Console.WriteLine($"[URGENT] CycleCountTask created for Location {lpn.CurrentLocation} due to Pick Shortage.");
+                    Console.WriteLine($"[URGENT] CycleCountTask created for Location {lpn.CurrentLocationId} due to Pick Shortage.");
                 }
 
                 lpn.Pick(command.UserId, command.StationId);

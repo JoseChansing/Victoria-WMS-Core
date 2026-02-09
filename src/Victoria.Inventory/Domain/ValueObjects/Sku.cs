@@ -1,22 +1,21 @@
 using System;
 using System.Collections.Generic;
+using Newtonsoft.Json;
 using Victoria.Core;
 
 namespace Victoria.Inventory.Domain.ValueObjects
 {
     public sealed class Sku : ValueObject
     {
-        public string Value { get; }
+        [JsonProperty]
+        public string Value { get; private set; }
+
+        [JsonConstructor]
+        private Sku() { } // Marten constructor
 
         private Sku(string value)
         {
-            if (string.IsNullOrWhiteSpace(value))
-                throw new ArgumentException("SKU cannot be empty.");
-            
-            if (value.Length < 3)
-                throw new ArgumentException("SKU is too short.");
-
-            Value = value;
+            Value = value?.Trim().ToUpperInvariant() ?? throw new ArgumentNullException(nameof(value));
         }
 
         public static Sku Create(string value) => new Sku(value);

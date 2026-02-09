@@ -1,21 +1,32 @@
-import { useQuery } from '@tanstack/react-query';
-import api from '../api/axiosConfig';
-import type { PurchaseOrder, InboundKPIs } from '../types/inbound';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { inboundService, type ReceiveParams } from '../services/inbound.service';
 
 export const useInbound = () => {
+    const queryClient = useQueryClient();
+
     const kpisQuery = useQuery({
         queryKey: ['inbound-kpis'],
-        queryFn: async () => {
-            const { data } = await api.get<InboundKPIs>('/inbound/kpis');
-            return data;
-        }
+        queryFn: inboundService.getKPIs
     });
 
     const ordersQuery = useQuery({
         queryKey: ['inbound-orders'],
-        queryFn: async () => {
-            const { data } = await api.get<PurchaseOrder[]>('/inbound/orders');
-            return data;
+        queryFn: inboundService.getOrders
+    });
+
+    const receiveMutation = useMutation({
+        mutationFn: (params: ReceiveParams) => inboundService.receiveLpn(params),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['inbound-kpis'] });
+            queryClient.invalidateQueries({ queryKey: ['inbound-orders'] });
+        }
+    });
+
+    const closeOrderMutation = useMutation({
+        mutationFn: (orderId: string) => inboundService.closeOrder(orderId),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['inbound-kpis'] });
+            queryClient.invalidateQueries({ queryKey: ['inbound-orders'] });
         }
     });
 
@@ -23,6 +34,12 @@ export const useInbound = () => {
         kpis: kpisQuery.data,
         orders: ordersQuery.data || [],
         isLoading: kpisQuery.isLoading || ordersQuery.isLoading,
-        error: kpisQuery.error || ordersQuery.error
+        error: kpisQuery.error || ordersQuery.error,
+        receiveLpn: receiveMutation.mutateAsync,
+        isReceiving: receiveMutation.isPending,
+        closeOrder: closeOrderMutation.mutateAsync,
+        isClosing: closeOrderMutation.isPending,
+        printRfid: (lpnId: string) => inboundService.printRfid(lpnId)
     };
 };
+

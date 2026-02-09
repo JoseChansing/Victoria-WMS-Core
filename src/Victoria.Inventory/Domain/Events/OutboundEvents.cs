@@ -5,7 +5,6 @@ using Victoria.Core;
 namespace Victoria.Inventory.Domain.Events
 {
     public record PickingOverageRequested(
-        string TenantId,
         string OrderId,
         string LineId,
         string Sku,
@@ -17,7 +16,6 @@ namespace Victoria.Inventory.Domain.Events
     ) : IDomainEvent;
 
     public record PickingOverageApproved(
-        string TenantId,
         string OrderId,
         string LineId,
         int NewQuantity,
@@ -29,7 +27,6 @@ namespace Victoria.Inventory.Domain.Events
     ) : IDomainEvent;
 
     public record PickingOverageRejected(
-        string TenantId,
         string OrderId,
         string LineId,
         string SupervisorId,

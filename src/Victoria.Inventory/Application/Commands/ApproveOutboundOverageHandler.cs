@@ -1,3 +1,4 @@
+#if false
 using System;
 using System.Threading.Tasks;
 using Victoria.Core.Infrastructure;
@@ -36,7 +37,7 @@ namespace Victoria.Inventory.Application.Commands
             try
             {
                 // SIMULACIÓN: Cargar Orden
-                var order = new OutboundOrder(command.TenantId, command.OrderId);
+                var order = new OutboundOrder(command.OrderId);
                 order.AddLine(command.LineId, "SKU-PROMO", 10); // Supongamos que pedía 10
                 order.RequestOverage(command.LineId, command.ApprovedQuantity);
 
@@ -45,7 +46,6 @@ namespace Victoria.Inventory.Application.Commands
 
                 // Emitir Evento Crítico
                 var @event = new PickingOverageApproved(
-                    command.TenantId,
                     command.OrderId,
                     command.LineId,
                     command.ApprovedQuantity,
@@ -68,3 +68,4 @@ namespace Victoria.Inventory.Application.Commands
         }
     }
 }
+#endif

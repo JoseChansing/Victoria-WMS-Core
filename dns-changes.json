@@ -1,0 +1,31 @@
+{
+  "Comment": "Update app.victoriawms.dev to point to EC2",
+  "Changes": [
+    {
+      "Action": "DELETE",
+      "ResourceRecordSet": {
+        "Name": "app.victoriawms.dev.",
+        "Type": "CNAME",
+        "TTL": 300,
+        "ResourceRecords": [
+          {
+            "Value": "d2iutehupx2mek.cloudfront.net"
+          }
+        ]
+      }
+    },
+    {
+      "Action": "CREATE",
+      "ResourceRecordSet": {
+        "Name": "app.victoriawms.dev.",
+        "Type": "A",
+        "TTL": 300,
+        "ResourceRecords": [
+          {
+            "Value": "3.14.182.244"
+          }
+        ]
+      }
+    }
+  ]
+}

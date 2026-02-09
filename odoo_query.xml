@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<methodCall>
+<methodName>execute_kw</methodName>
+<params>
+<param><value><string>victoriastock</string></value></param>
+<param><value><int>2</int></value></param>
+<param><value><string>34204e38e68449c28892d192cc9436ca6d588506</string></value></param>
+<param><value><string>stock.move</string></value></param>
+<param><value><string>search_read</string></value></param>
+<param><value><array><data>
+<value><array><data>
+<value><array><data>
+<value><string>picking_id</string></value>
+<value><string>=</string>
+<value><int>7</int></value>
+</data></array></value>
+</data></array></value>
+</data></array></value></param>
+<param><value><struct>
+<member><name>fields</name><value><array><data>
+<value><string>id</string></value>
+<value><string>product_id</string></value>
+<value><string>quantity</string></value>
+</data></array></value></member>
+</struct></value></param>
+</params>
+</methodCall>

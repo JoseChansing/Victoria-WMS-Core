@@ -1,172 +1,245 @@
-// src/Victoria.UI/src/features/inventory/InventoryDashboard.tsx
-import React from 'react';
+import { useState, useEffect } from 'react';
 import {
-    AlertCircle,
-    CheckCircle2,
-    ShieldCheck,
-    History,
+    Package,
     Search,
-    Filter,
-    ArrowUpRight,
-    Package
+    Activity,
+    RotateCcw,
+    ChevronRight,
+    Printer,
+    History,
+    Layout,
 } from 'lucide-react';
-import { useInventory } from '../../hooks/useInventory';
-import { useAuth } from '../../context/AuthContext';
+import api from '../../api/axiosConfig';
 
-export const InventoryDashboard: React.FC = () => {
-    const { user } = useAuth();
-    const { inventory, isLoading, approveAdjustment } = useInventory();
+interface InventoryItem {
+    id: string;
+    code: { value: string };
+    sku: { value: string };
+    type: number;
+    quantity: number;
+    allocatedQuantity: number;
+    currentLocationId: string;
+    status: number;
+    createdAt: string;
+}
 
-    if (isLoading) {
-        return (
-            <div className="flex items-center justify-center min-h-[400px]">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-            </div>
-        );
-    }
+const LPN_TYPES: Record<number, string> = {
+    0: 'Suelto',
+    1: 'Pack',
+    2: 'Pallet'
+};
 
-    const handleApprove = async (lpnId: string, qty: number) => {
-        if (window.confirm(`¿Autorizar ajuste a ${qty} unidades para el LPN ${lpnId}?`)) {
-            await approveAdjustment.mutateAsync({
-                lpnId,
-                newQuantity: qty,
-                reason: "SUPERVISOR_APPROVAL_UI"
-            });
+const LPN_STATUS: Record<number, string> = {
+    0: 'Creado',
+    1: 'Recibido',
+    2: 'Ubicado',
+    3: 'Asignado',
+    4: 'Picked',
+    5: 'Empacado',
+    6: 'Despachado'
+};
+
+export const InventoryDashboard = () => {
+    const [inventory, setInventory] = useState<InventoryItem[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [search, setSearch] = useState('');
+
+    const handlePrintLabel = (lpnId: string) => {
+        const url = `${api.defaults.baseURL}/printing/lpn/${lpnId}/label`;
+        window.open(url, '_blank', 'width=400,height=600');
+    };
+
+    const fetchData = async () => {
+        setLoading(true);
+        try {
+            const { data } = await api.get('/inventory/lpns');
+            setInventory(data);
+        } catch (error) {
+            console.error('Error fetching inventory:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchData();
+    }, []);
+
+    const filteredInventory = inventory.filter(item => {
+        const matchesSearch =
+            item.sku.value.toLowerCase().includes(search.toLowerCase()) ||
+            item.id.toLowerCase().includes(search.toLowerCase()) ||
+            item.code.value.toLowerCase().includes(search.toLowerCase());
+
+        return matchesSearch;
+    });
+
+    const getStatusColor = (status: number) => {
+        switch (status) {
+            case 2: return 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'; // Ubicado (Available)
+            case 3: return 'bg-blue-500/10 text-blue-500 border-blue-500/20'; // Asignado (Reserved)
+            case 4: return 'bg-amber-500/10 text-amber-500 border-amber-500/20'; // Picked
+            default: return 'bg-slate-500/10 text-slate-500 border-slate-500/20';
         }
     };
 
     return (
-        <div className="space-y-8 animate-fade-in">
-            {/* Header / Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-                    <div className="flex items-center justify-between mb-2">
-                        <span className="text-slate-400 font-bold text-[10px] uppercase tracking-wider">Total SKUs</span>
-                        <Package className="w-4 h-4 text-blue-500" />
-                    </div>
-                    <p className="text-2xl font-black text-slate-900">{Array.from(new Set(inventory.map(i => i.sku))).length}</p>
+        <div className="space-y-6 animate-in fade-in duration-500">
+            {/* Header */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h2 className="text-2xl font-black text-white tracking-tight flex items-center gap-2">
+                        <Package className="text-corp-accent w-8 h-8" />
+                        Visor de LPNs (Maestro)
+                    </h2>
+                    <p className="text-slate-400 font-medium">Control de unidades por contenedor y contenedor principal</p>
                 </div>
-
-                <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-                    <div className="flex items-center justify-between mb-2">
-                        <span className="text-slate-400 font-bold text-[10px] uppercase tracking-wider">Discrepancias</span>
-                        <AlertCircle className="w-4 h-4 text-rose-500" />
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={fetchData}
+                        className="p-2.5 bg-corp-nav/40 border border-corp-secondary text-slate-300 rounded-xl hover:bg-corp-accent/40 hover:text-white transition-all shadow-sm"
+                    >
+                        <RotateCcw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+                    </button>
+                    <div className="h-8 w-[1px] bg-corp-secondary" />
+                    <div className="bg-corp-accent/10 px-4 py-2 rounded-xl border border-corp-accent/20">
+                        <span className="text-xs font-bold text-corp-accent uppercase tracking-widest leading-none block mb-0.5">Total Unidades</span>
+                        <span className="text-lg font-black text-white leading-none">
+                            {inventory.reduce((acc, curr) => acc + curr.quantity, 0).toLocaleString()} <span className="text-xs font-medium text-slate-400">UND</span>
+                        </span>
                     </div>
-                    <p className="text-2xl font-black text-slate-900">{inventory.filter(i => i.status === 'Quarantine').length}</p>
-                </div>
-
-                <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-                    <div className="flex items-center justify-between mb-2">
-                        <span className="text-slate-400 font-bold text-[10px] uppercase tracking-wider">Conteo Total</span>
-                        <History className="w-4 h-4 text-emerald-500" />
-                    </div>
-                    <p className="text-2xl font-black text-slate-900">{inventory.reduce((acc, curr) => acc + curr.quantity, 0).toLocaleString()}</p>
-                </div>
-
-                <div className="bg-blue-600 p-6 rounded-2xl shadow-lg shadow-blue-100 text-white">
-                    <div className="flex items-center justify-between mb-2">
-                        <span className="text-blue-100 font-bold text-[10px] uppercase tracking-wider">Salud del Inventario</span>
-                        <ShieldCheck className="w-4 h-4 text-white" />
-                    </div>
-                    <p className="text-2xl font-black">98.2%</p>
                 </div>
             </div>
 
-            {/* Table Area */}
-            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-                <div className="p-6 border-b border-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <h2 className="text-lg font-bold flex items-center space-x-2">
-                        <div className="w-2 h-6 bg-blue-600 rounded-full"></div>
-                        <span>Torre de Control de Inventario</span>
-                    </h2>
+            {/* Stats */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-corp-nav/40 p-5 rounded-3xl border border-corp-secondary shadow-xl shadow-black/10 flex items-center gap-4">
+                    <div className="p-3 bg-emerald-500/10 rounded-2xl border border-emerald-500/20">
+                        <Activity className="w-6 h-6 text-emerald-500" />
+                    </div>
+                    <div>
+                        <p className="text-xs font-black text-slate-500 uppercase tracking-wider">Ubicados / Disp.</p>
+                        <p className="text-2xl font-black text-white">
+                            {inventory.filter(i => i.status === 2).length} <span className="text-xs text-slate-400">LPNs</span>
+                        </p>
+                    </div>
+                </div>
+                <div className="bg-corp-nav/40 p-5 rounded-3xl border border-corp-secondary shadow-xl shadow-black/10 flex items-center gap-4">
+                    <div className="p-3 bg-blue-500/10 rounded-2xl border border-blue-500/20">
+                        <Activity className="w-6 h-6 text-blue-500" />
+                    </div>
+                    <div>
+                        <p className="text-xs font-black text-slate-500 uppercase tracking-wider">Comprometidos (Picking)</p>
+                        <p className="text-2xl font-black text-white">
+                            {inventory.filter(i => i.status === 3).length} <span className="text-xs text-slate-400">LPNs</span>
+                        </p>
+                    </div>
+                </div>
+            </div>
 
-                    <div className="flex items-center space-x-2">
-                        <div className="relative">
-                            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                            <input
-                                type="text"
-                                placeholder="Buscar LPN o SKU..."
-                                className="pl-10 pr-4 py-2 bg-slate-50 border-none rounded-xl text-sm focus:ring-2 focus:ring-blue-500 w-64 transition-all"
-                            />
-                        </div>
-                        <button className="p-2 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
-                            <Filter className="w-4 h-4 text-slate-600" />
-                        </button>
+            {/* Filters & Table */}
+            <div className="bg-corp-nav/40 rounded-3xl border border-corp-secondary shadow-xl overflow-hidden">
+                <div className="p-6 border-b border-corp-secondary/50 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-corp-base/30">
+                    <div className="relative flex-1 max-w-xl">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                        <input
+                            type="text"
+                            placeholder="Buscar por SKU, o LPN ID..."
+                            className="w-full pl-11 pr-4 py-3 bg-corp-base/50 border border-corp-secondary/50 rounded-2xl text-sm text-white focus:ring-2 focus:ring-corp-accent transition-all font-medium placeholder:text-slate-600"
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                        />
                     </div>
                 </div>
 
                 <div className="overflow-x-auto">
-                    <table className="w-full text-left">
+                    <table className="w-full text-left border-collapse">
                         <thead>
-                            <tr className="border-b border-slate-50">
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">LPN ID</th>
+                            <tr className="bg-corp-accent/5 border-b border-corp-secondary/30">
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Información LPN</th>
                                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">SKU</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Cantidad</th>
                                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Ubicación</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Cantidad</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest px-8">Estado</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Acciones</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Estado</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-50">
-                            {inventory.length === 0 ? (
-                                <tr>
-                                    <td colSpan={6} className="px-6 py-12 text-center text-slate-400 italic text-sm">
-                                        No hay discrepancias pendientes o inventario cargado para este tenant.
-                                    </td>
-                                </tr>
-                            ) : (
-                                inventory.map((item) => (
-                                    <tr key={item.id} className="hover:bg-slate-50/50 transition-colors group">
-                                        <td className="px-6 py-4">
-                                            <span className="font-mono font-bold text-sm text-slate-700">{item.id}</span>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex flex-col">
-                                                <span className="text-sm font-bold text-slate-900">{item.sku}</span>
-                                                <span className="text-[10px] text-slate-400 font-medium">Standard Product</span>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center space-x-2">
-                                                <div className="w-2 h-2 rounded-full bg-slate-300"></div>
-                                                <span className="text-sm font-semibold text-slate-600">{item.location}</span>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 text-right">
-                                            <span className="text-sm font-black text-slate-900">{item.quantity}</span>
-                                        </td>
-                                        <td className="px-6 py-4 px-8">
-                                            <div className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tight ${item.status === 'Quarantine'
-                                                ? 'bg-rose-50 text-rose-600'
-                                                : item.status === 'Putaway'
-                                                    ? 'bg-emerald-50 text-emerald-600'
-                                                    : 'bg-slate-100 text-slate-600'
-                                                }`}>
-                                                {item.status === 'Quarantine' && <AlertCircle className="w-3 h-3" />}
-                                                {item.status === 'Putaway' && <CheckCircle2 className="w-3 h-3" />}
-                                                <span>{item.status}</span>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex justify-center">
-                                                {item.status === 'Quarantine' && user?.role === 'Supervisor' ? (
-                                                    <button
-                                                        onClick={() => handleApprove(item.id, item.quantity)}
-                                                        className="px-4 py-2 bg-rose-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-rose-100 hover:bg-rose-700 transition-all active:scale-95 flex items-center space-x-2"
-                                                    >
-                                                        <span>Aprobar Ajuste</span>
-                                                        <ArrowUpRight className="w-3 h-3" />
-                                                    </button>
-                                                ) : (
-                                                    <button className="p-2 text-slate-300 hover:text-slate-600 transition-colors">
-                                                        <History className="w-4 h-4" />
-                                                    </button>
-                                                )}
-                                            </div>
+                        <tbody className="divide-y divide-corp-secondary/20">
+                            {loading ? (
+                                Array(5).fill(0).map((_, i) => (
+                                    <tr key={i} className="animate-pulse">
+                                        <td colSpan={6} className="px-6 py-8">
+                                            <div className="h-4 bg-slate-100/5 rounded-full w-full"></div>
                                         </td>
                                     </tr>
                                 ))
-                            )}
+                            ) : filteredInventory.length === 0 ? (
+                                <tr>
+                                    <td colSpan={6} className="px-6 py-20 text-center">
+                                        <div className="flex flex-col items-center gap-3">
+                                            <div className="p-4 bg-corp-secondary/20 rounded-full">
+                                                <Package className="w-8 h-8 text-slate-600" />
+                                            </div>
+                                            <p className="text-slate-500 font-bold">No se encontraron LPNs</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ) : filteredInventory.map(item => (
+                                <tr key={item.id} className="hover:bg-corp-accent/5 transition-colors group">
+                                    <td className="px-6 py-5">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 bg-corp-base rounded-xl border border-corp-secondary flex items-center justify-center group-hover:border-corp-accent/50 transition-colors shadow-sm">
+                                                <Layout className="w-5 h-5 text-slate-500 group-hover:text-corp-accent transition-colors" />
+                                            </div>
+                                            <div className="flex flex-col text-sm">
+                                                <span className="font-bold text-white group-hover:text-corp-accent transition-colors">
+                                                    {item.id}
+                                                </span>
+                                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{LPN_TYPES[item.type] || 'Desconocido'}</span>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-5">
+                                        <div className="flex flex-col text-sm">
+                                            <span className="font-bold text-white group-hover:text-corp-accent transition-colors">{item.sku.value}</span>
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-5 text-center">
+                                        <span className="px-3 py-1 bg-corp-base border border-corp-secondary rounded-lg font-black text-white text-sm">
+                                            {item.quantity}
+                                        </span>
+                                    </td>
+                                    <td className="px-6 py-5">
+                                        <div className="flex flex-col">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-2 h-2 rounded-full bg-corp-accent shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
+                                                <span className="font-bold text-sm text-white uppercase tracking-tight">{item.currentLocationId}</span>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-5 text-center">
+                                        <span className={`inline-flex items-center px-2.5 py-1 rounded-lg border text-[10px] font-black uppercase tracking-widest ${getStatusColor(item.status)}`}>
+                                            {LPN_STATUS[item.status] || 'Unknown'}
+                                        </span>
+                                    </td>
+                                    <td className="px-6 py-5 text-right">
+                                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                                            <button
+                                                onClick={() => handlePrintLabel(item.id)}
+                                                className="p-2 text-slate-500 hover:text-white hover:bg-corp-accent/40 rounded-lg transition-all border border-transparent hover:border-corp-secondary/50"
+                                                title="Imprimir Etiqueta"
+                                            >
+                                                <Printer className="w-4 h-4" />
+                                            </button>
+                                            <button className="p-2 text-slate-500 hover:text-white hover:bg-corp-accent/40 rounded-lg transition-all border border-transparent hover:border-corp-secondary/50">
+                                                <History className="w-4 h-4" />
+                                            </button>
+                                            <div className="w-4" />
+                                            <ChevronRight className="w-4 h-4 text-slate-600" />
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
                         </tbody>
                     </table>
                 </div>

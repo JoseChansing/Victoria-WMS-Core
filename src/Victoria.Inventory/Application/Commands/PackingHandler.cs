@@ -40,14 +40,11 @@ namespace Victoria.Inventory.Application.Commands
             try
             {
                 var batches = new List<EventStreamBatch>();
-                var actorTenant = TenantId.Create(command.TenantId);
-
                 // 1. Crear el Contenedor Maestro con Tenant
-                var masterLpn = Lpn.Create(command.TenantId, command.MasterLpnId, LpnCode.Create("LPN9990000001"), Sku.Create("CONTAINER-01"), 1, command.UserId, command.StationId);
+                var masterLpn = Lpn.Provision(command.MasterLpnId, LpnCode.Create("LPN9990000001"), Sku.Create("CONTAINER-01"), LpnType.Loose, 1, PhysicalAttributes.Empty(), command.UserId, command.StationId);
                 masterLpn.ClearChanges();
 
                 var packingEvent = new PackingCompleted(
-                    command.TenantId,
                     command.MasterLpnId,
                     command.ChildLpnIds,
                     command.Weight,

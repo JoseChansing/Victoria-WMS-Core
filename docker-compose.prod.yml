@@ -37,7 +37,7 @@ services:
     networks:
       - victoria-net
 
-  # === API PERFECT PTY ===
+  # === API PERFECT PTY (Combined API + Worker) ===
   api-perfect:
     build:
       context: .
@@ -47,35 +47,19 @@ services:
     restart: always
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
-      - ConnectionStrings__Marten=Host=victoria-db;Database=victoria_perfect;Username=postgres;Password=${DB_PASSWORD}
-      - ConnectionStrings__Redis=victoria-cache:6379
-      - Odoo__Url=${ODOO_URL_PERFECT}
-      - Odoo__Db=${ODOO_DB_PERFECT}
-      - Odoo__User=${ODOO_USER_PERFECT}
-      - App__TenantPrefix=PTC
-    ports:
-      - "8081:8080"
-    depends_on:
-      - victoria-db
-      - victoria-cache
-    networks:
-      - victoria-net
-
-  # === WORKER PERFECT PTY ===
-  worker-perfect:
-    image: victoria-api:latest
-    container_name: worker-perfect
-    environment:
-      - App__TenantPrefix=PTC
       - ENABLE_ODOO_POLLING=true
       - ConnectionStrings__Marten=Host=victoria-db;Database=victoria_perfect;Username=postgres;Password=${DB_PASSWORD}
       - ConnectionStrings__Redis=victoria-cache:6379
       - Odoo__Url=${ODOO_URL_PERFECT}
       - Odoo__Db=${ODOO_DB_PERFECT}
       - Odoo__User=${ODOO_USER_PERFECT}
-      - Odoo__ApiKey=${ODOO_PASSWORD_PERFECT}
+      - Odoo__ApiKey=${ODOO_KEY_PERFECT}
+      - App__TenantPrefix=PTC
+    ports:
+      - "8081:8080"
     depends_on:
       - victoria-db
+      - victoria-cache
     networks:
       - victoria-net
 

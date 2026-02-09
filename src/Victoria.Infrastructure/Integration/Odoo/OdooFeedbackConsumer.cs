@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Victoria.Inventory.Domain.Events;
+using Victoria.Core.Messaging;
+using Victoria.Core.Interfaces;
 
 namespace Victoria.Infrastructure.Integration.Odoo
 {

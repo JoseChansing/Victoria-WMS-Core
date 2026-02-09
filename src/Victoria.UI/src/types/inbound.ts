@@ -19,7 +19,7 @@ export interface ReceiptLine {
 
 export interface PurchaseOrder {
     id: string;
-    poNumber: string;
+    orderNumber: string;
     supplier: string;
     date: string;
     status: 'Pending' | 'In Progress' | 'Completed';

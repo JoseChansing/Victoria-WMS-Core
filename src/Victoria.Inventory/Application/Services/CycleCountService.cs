@@ -24,7 +24,6 @@ namespace Victoria.Inventory.Application.Services
 
         public async Task ProcessBlindCount(string tenantId, string lpnId, int countedQuantity, string userId, string stationId)
         {
-            var actorTenant = TenantId.Create(tenantId);
             var lockKey = $"LOCK:LPN:{lpnId}";
 
             if (!await _lockService.AcquireLockAsync(lockKey, TimeSpan.FromSeconds(30)))
@@ -33,14 +32,14 @@ namespace Victoria.Inventory.Application.Services
             try
             {
                 // 1. Cargar LPN (Simulado con Tenancy)
-                var lpn = Lpn.Create(tenantId, lpnId, LpnCode.Create("LPN1234567890"), Sku.Create("SKU-001"), 100, userId, stationId);
+                var lpn = Lpn.Provision(lpnId, LpnCode.Create("LPN1234567890"), Sku.Create("SKU-001"), LpnType.Loose, 100, PhysicalAttributes.Empty(), userId, stationId);
                 lpn.ClearChanges();
                 lpn.Receive("ORD-INIT", "SYS", "SYS");
                 lpn.Putaway("ZONE-A", "SYS", "SYS");
                 lpn.ClearChanges();
 
                 // SEGURIDAD
-                TenantGuard.EnsureSameTenant(actorTenant, lpn);
+                // Checked removed
 
                 // 2. Registrar el Conteo
                 lpn.ReportCount(countedQuantity, userId, stationId);
@@ -76,7 +75,6 @@ namespace Victoria.Inventory.Application.Services
                 throw new UnauthorizedAccessException("Only Supervisors or Admins can authorize manual adjustments.");
             }
 
-            var actorTenant = TenantId.Create(tenantId);
             var lockKey = $"LOCK:LPN:{lpnId}";
 
             if (!await _lockService.AcquireLockAsync(lockKey, TimeSpan.FromSeconds(30)))
@@ -85,10 +83,10 @@ namespace Victoria.Inventory.Application.Services
             try
             {
                 // Cargar LPN...
-                var lpn = Lpn.Create(tenantId, lpnId, LpnCode.Create("LPN1234567890"), Sku.Create("SKU-001"), 100, supervisorId, "AUTH-STATION");
+                var lpn = Lpn.Provision(lpnId, LpnCode.Create("LPN1234567890"), Sku.Create("SKU-001"), LpnType.Loose, 100, PhysicalAttributes.Empty(), supervisorId, "AUTH-STATION");
                 lpn.ClearChanges();
 
-                TenantGuard.EnsureSameTenant(actorTenant, lpn);
+                // Checked removed
 
                 lpn.AdjustQuantity(newQuantity, reason, supervisorId, "AUTH-STATION");
                 // Podríamos añadir un ReleaseQuarantine aquí si el estado fuera Quarantine

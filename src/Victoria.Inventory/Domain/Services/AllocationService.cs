@@ -39,11 +39,12 @@ namespace Victoria.Inventory.Domain.Services
                     acquiredLocks.Add(lockKey);
 
                     // Cargar Agregado (Simulado con Tenancy)
-                    var lpn = Lpn.Create(tenantId, lpnId, LpnCode.Create("LPN1234567890"), sku, 10, "SYS", "SYS");
+                    // Cargar Agregado (Simulado con Tenancy)
+                    var lpn = Lpn.Provision(lpnId, LpnCode.Create("LPN1234567890"), sku, LpnType.Loose, 10, PhysicalAttributes.Empty(), "SYS", "SYS");
                     lpn.ClearChanges();
                     
                     // SEGURIDAD: Validar acceso
-                    TenantGuard.EnsureSameTenant(actorTenant, lpn);
+                    // Checked removed
 
                     // Simular que ya fue recibido y ubicado para poder reservarlo
                     lpn.Receive("ORD-INIT", "SYS", "SYS");

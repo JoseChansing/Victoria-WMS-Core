@@ -8,7 +8,9 @@ import {
     LogOut,
     UserCircle,
     ChevronRight,
-    Bell
+    Bell,
+    MapPin,
+    Box
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -23,11 +25,11 @@ const SidebarItem: React.FC<SidebarItemProps> = ({ icon, label, active, onClick 
     <button
         onClick={onClick}
         className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 group ${active
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-200'
-                : 'text-slate-500 hover:bg-blue-50 hover:text-blue-600'
+            ? 'bg-corp-accent text-white shadow-lg shadow-black/20'
+            : 'text-slate-400 hover:bg-corp-accent/50 hover:text-white'
             }`}
     >
-        <span className={`${active ? 'text-white' : 'text-slate-400 group-hover:text-blue-600'} transition-colors`}>
+        <span className={`${active ? 'text-white' : 'text-slate-500 group-hover:text-white'} transition-colors`}>
             {icon}
         </span>
         <span className="font-semibold text-sm">{label}</span>
@@ -42,22 +44,28 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
     const menuItems = [
         { icon: <LayoutDashboard className="w-5 h-5" />, label: 'Dashboard', path: '/inventory' },
-        { icon: <Truck className="w-5 h-5" />, label: 'Módulo Inbound', path: '/inbound' },
+        { icon: <Truck className="w-5 h-5 text-blue-400" />, label: '📡 Inbound RFID', path: '/inbound?mode=rfid' },
+        { icon: <Truck className="w-5 h-5 text-emerald-400" />, label: '🖨️ Inbound Standard', path: '/inbound?mode=standard' },
+        { icon: <Package className="w-5 h-5" />, label: 'Maestro LPNs', path: '/inventory-master' },
+        { icon: <Box className="w-5 h-5 text-blue-400" />, label: 'Inventario por Item', path: '/inventory-item' },
+        { icon: <MapPin className="w-5 h-5 text-emerald-400" />, label: 'Inventario por Ubicación', path: '/inventory-location' },
         { icon: <Package className="w-5 h-5" />, label: 'Maestro SKUs', path: '/skus' },
+        { icon: <MapPin className="w-5 h-5" />, label: 'Maestro Ubicaciones', path: '/locations' },
+        { icon: <Truck className="w-5 h-5 text-orange-500" />, label: '📤 Outbound / Despachos', path: '/outbound' },
     ];
 
     if (!user) return <>{children}</>;
 
     return (
-        <div className="flex min-h-screen bg-slate-50 font-sans text-slate-900">
+        <div className="flex min-h-screen bg-corp-base font-sans text-white">
             {/* Sidebar */}
-            <aside className="w-72 bg-white border-r border-slate-200 flex flex-col p-6 fixed h-full z-20">
+            <aside className="w-72 bg-corp-nav border-r border-corp-secondary flex flex-col p-6 fixed h-full z-20 shadow-xl">
                 <div className="flex items-center space-x-3 mb-10 px-2">
-                    <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-100">
+                    <div className="w-10 h-10 bg-corp-accent rounded-xl flex items-center justify-center shadow-lg shadow-black/20">
                         <Package className="text-white w-6 h-6" />
                     </div>
                     <div>
-                        <h1 className="text-xl font-bold tracking-tight">Victoria WMS</h1>
+                        <h1 className="text-xl font-bold tracking-tight text-white">Victoria WMS</h1>
                         <p className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Torre de Control</p>
                     </div>
                 </div>
@@ -74,20 +82,20 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                     ))}
                 </nav>
 
-                <div className="mt-auto pt-6 border-t border-slate-100 space-y-4">
-                    <div className="bg-slate-50 rounded-2xl p-4 flex items-center space-x-3">
-                        <div className="w-10 h-10 bg-white rounded-full border border-slate-200 flex items-center justify-center overflow-hidden">
-                            <UserCircle className="w-8 h-8 text-slate-300" />
+                <div className="mt-auto pt-6 border-t border-corp-secondary space-y-4">
+                    <div className="bg-corp-accent/30 rounded-2xl p-4 flex items-center space-x-3">
+                        <div className="w-10 h-10 bg-corp-nav rounded-full border border-corp-secondary flex items-center justify-center overflow-hidden">
+                            <UserCircle className="w-8 h-8 text-slate-400" />
                         </div>
                         <div className="flex-1 overflow-hidden">
-                            <p className="text-xs font-bold truncate">{user.id}</p>
-                            <p className="text-[10px] text-slate-500 font-medium uppercase">{tenant}</p>
+                            <p className="text-xs font-bold truncate text-white">{user.id}</p>
+                            <p className="text-[10px] text-slate-400 font-medium uppercase">{tenant}</p>
                         </div>
                     </div>
 
                     <button
                         onClick={logout}
-                        className="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-rose-500 hover:bg-rose-50 transition-all font-semibold text-sm"
+                        className="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-rose-400 hover:bg-rose-500/10 transition-all font-semibold text-sm"
                     >
                         <LogOut className="w-5 h-5" />
                         <span>Cerrar Sesión</span>
@@ -98,31 +106,31 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             {/* Main Content */}
             <main className="flex-1 ml-72">
                 {/* Header */}
-                <header className="h-20 bg-white/80 backdrop-blur-md border-b border-slate-200 px-8 flex items-center justify-between sticky top-0 z-10">
+                <header className="h-20 bg-corp-nav/90 backdrop-blur-md border-b border-corp-secondary px-8 flex items-center justify-between sticky top-0 z-10">
                     <div className="flex items-center space-x-2">
                         <span className="text-slate-400 text-sm font-medium">Pages</span>
-                        <ChevronRight className="w-4 h-4 text-slate-300" />
-                        <span className="text-slate-900 text-sm font-semibold capitalize">
+                        <ChevronRight className="w-4 h-4 text-slate-500" />
+                        <span className="text-white text-sm font-semibold capitalize tracking-wide">
                             {location.pathname.replace('/', '') || 'Dashboard'}
                         </span>
                     </div>
 
                     <div className="flex items-center space-x-4">
-                        <button className="p-2 text-slate-400 hover:text-blue-600 transition-colors relative">
+                        <button className="p-2 text-slate-400 hover:text-white transition-colors relative">
                             <Bell className="w-5 h-5" />
-                            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-rose-500 border-2 border-white rounded-full"></span>
+                            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-rose-500 border-2 border-corp-nav rounded-full"></span>
                         </button>
-                        <div className="h-8 w-[1px] bg-slate-200 mx-2"></div>
+                        <div className="h-8 w-[1px] bg-corp-secondary mx-2"></div>
                         <div className="flex items-center space-x-3">
-                            <span className="text-xs font-bold text-slate-700">{user.role}</span>
-                            <div className="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center">
+                            <span className="text-xs font-bold text-slate-300">{user.role}</span>
+                            <div className="w-8 h-8 bg-corp-accent rounded-lg flex items-center justify-center border border-corp-secondary">
                                 <span className="text-[10px] text-white font-black">{user.id.substring(0, 2).toUpperCase()}</span>
                             </div>
                         </div>
                     </div>
                 </header>
 
-                <div className="p-8">
+                <div className="p-8 bg-corp-base">
                     {children}
                 </div>
             </main>

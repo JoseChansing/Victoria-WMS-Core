@@ -16,28 +16,7 @@ namespace Victoria.Inventory.Domain.Security
 
     public static class TenantGuard
     {
-        public static void EnsureSameTenant(TenantId actorTenant, Lpn lpn)
-        {
-            if (actorTenant != lpn.Tenant)
-            {
-                throw new TenantSecurityException($"Access Denied: Tenant '{actorTenant}' cannot access LPN '{lpn.Id}' belonging to Tenant '{lpn.Tenant}'.");
-            }
-        }
+        // LPN Guards removed due to Single-Tenant Architecture
 
-        public static void EnsureSameTenant(TenantId actorTenant, Location location)
-        {
-            if (actorTenant != location.Tenant)
-            {
-                throw new TenantSecurityException($"Access Denied: Tenant '{actorTenant}' cannot access Location '{location.Code}' belonging to Tenant '{location.Tenant}'.");
-            }
-        }
-
-        public static void EnsureCompatibility(Lpn lpn, Location location)
-        {
-            if (lpn.Tenant != location.Tenant)
-            {
-                throw new TenantSecurityException($"Inventory Contamination Risk: Cannot place LPN '{lpn.Id}' (Tenant: {lpn.Tenant}) in Location '{location.Code}' (Tenant: {location.Tenant}).");
-            }
-        }
     }
 }

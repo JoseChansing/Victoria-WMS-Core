@@ -1,22 +1,27 @@
 using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
+using Newtonsoft.Json;
 using Victoria.Core;
 
 namespace Victoria.Inventory.Domain.ValueObjects
 {
     public sealed class LpnCode : ValueObject
     {
-        public string Value { get; }
+        [JsonProperty]
+        public string Value { get; set; }
 
-        private LpnCode(string value)
+        [JsonConstructor]
+        private LpnCode() { } // Marten
+
+        public LpnCode(string value)
         {
             if (string.IsNullOrWhiteSpace(value))
                 throw new ArgumentException("LPN code cannot be empty.");
             
-            // Example validation: must start with LPN followed by 10 digits
-            if (!Regex.IsMatch(value, @"^LPN\d{10}$"))
-                throw new ArgumentException("Invalid LPN format. Expected LPN + 10 digits.");
+            // Relaxed validation: Allow Alphanumeric + dashes, 3-30 chars (Support for PTC, CONT, etc.)
+            if (!Regex.IsMatch(value, @"^[A-Z0-9-]{3,30}$"))
+                throw new ArgumentException("Invalid LPN format. Expected Alphanumeric (A-Z, 0-9, -) 3-30 chars.");
 
             Value = value;
         }

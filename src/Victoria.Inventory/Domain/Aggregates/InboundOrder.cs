@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Victoria.Inventory.Domain.ValueObjects;
 
 namespace Victoria.Inventory.Domain.Aggregates
 {
@@ -11,7 +12,6 @@ namespace Victoria.Inventory.Domain.Aggregates
         public string Status { get; set; } = "Pending";
         public string Date { get; set; } = DateTime.UtcNow.ToString("yyyy-MM-dd");
         public int TotalUnits { get; set; }
-        public string TenantId { get; set; } = string.Empty;
         public List<InboundLine> Lines { get; set; } = new();
     }
 
@@ -21,6 +21,8 @@ namespace Victoria.Inventory.Domain.Aggregates
         public string ProductName { get; set; } = string.Empty;
         public int ExpectedQty { get; set; }
         public int ReceivedQty { get; set; }
+        public long? OdooMoveId { get; set; } // Odoo ID (stock.move)
         public string? ImageSource { get; set; }
+        public PhysicalAttributes? Dimensions { get; set; }
     }
 }
