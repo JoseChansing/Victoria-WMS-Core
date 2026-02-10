@@ -19,11 +19,13 @@ namespace Victoria.API.Controllers
     {
         private readonly IDocumentSession _session; // Changed to IDocumentSession for Delete capability
         private readonly IOdooRpcClient _odooClient;
+        private readonly ILogger<ProductsController> _logger;
 
-        public ProductsController(IDocumentSession session, IOdooRpcClient odooClient)
+        public ProductsController(IDocumentSession session, IOdooRpcClient odooClient, ILogger<ProductsController> logger)
         {
             _session = session;
             _odooClient = odooClient;
+            _logger = logger;
         }
 
         [HttpGet]
@@ -32,6 +34,7 @@ namespace Victoria.API.Controllers
             [FromQuery] int pageSize = 50,
             [FromQuery] string? search = null)
         {
+            _logger.LogInformation($"[API] GetProducts request. Page: {page}, Size: {pageSize}, Search: '{search}'");
             try 
             {
                 // Basic validation
@@ -81,7 +84,8 @@ namespace Victoria.API.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = $"Error al obtener productos: {ex.Message}" });
+                _logger.LogError(ex, "[API-ERROR] GetProducts failed.");
+                return StatusCode(500, new { error = $"Error al obtener productos: {ex.Message}", details = ex.ToString() });
             }
         }
 

@@ -47,54 +47,70 @@ namespace Victoria.API.Controllers
         [HttpGet("kpis")]
         public async Task<IActionResult> GetKPIs()
         {
-            var orders = await _session.Query<InboundOrder>()
-                .Where(x => x.Status == "Pending")
-                .ToListAsync();
-
-            return Ok(new
+            try
             {
-                PendingOrders = orders.Count,
-                UnitsToReceive = orders.Sum(o => o.TotalUnits),
-                HighPriorityCount = 0 // Mock por ahora
-            });
+                var orders = await _session.Query<InboundOrder>()
+                    .Where(x => x.Status == "Pending")
+                    .ToListAsync();
+
+                return Ok(new
+                {
+                    PendingOrders = orders.Count,
+                    UnitsToReceive = orders.Sum(o => o.TotalUnits),
+                    HighPriorityCount = 0 // Mock por ahora
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[API-ERROR] GetKPIs failed.");
+                return StatusCode(500, new { error = ex.Message, details = ex.ToString() });
+            }
         }
 
         [HttpGet("orders")]
         public async Task<IActionResult> GetOrders()
         {
-            var orders = await _session.Query<InboundOrder>()
-                .OrderByDescending(x => x.Date)
-                .ToListAsync();
+            try
+            {
+                var orders = await _session.Query<InboundOrder>()
+                    .OrderByDescending(x => x.Date)
+                    .ToListAsync();
 
-            // Enrich with product dimensions AND current names for UI
-            var skus = orders.SelectMany(o => o.Lines).Select(l => l.Sku).Distinct().ToList();
-            var products = await _session.Query<Product>().Where(p => p.Sku.In(skus)).ToListAsync();
-            var productDict = products.ToDictionary(p => p.Sku);
+                // Enrich with product dimensions AND current names for UI
+                var skus = orders.SelectMany(o => o.Lines).Select(l => l.Sku).Distinct().ToList();
+                var products = await _session.Query<Product>().Where(p => p.Sku.In(skus)).ToListAsync();
+                var productDict = products.ToDictionary(p => p.Sku);
 
-            var result = orders.Select(o => new {
-                o.Id,
-                o.OrderNumber,
-                o.Supplier,
-                o.Status,
-                o.Date,
-                o.TotalUnits,
-                Lines = o.Lines.Select(l => new {
-                    l.Sku,
-                    // ✅ CRITICAL FIX: Use current product name from master, fallback to stored name
-                    ProductName = productDict.TryGetValue(l.Sku, out var p) ? p.Name : l.ProductName,
-                    l.ExpectedQty,
-                    l.ReceivedQty,
-                    RequiresSample = productDict.TryGetValue(l.Sku, out var pr) ? !pr.HasImage : true,
-                    Dimensions = productDict.TryGetValue(l.Sku, out var prod) ? new {
-                        Weight = prod.PhysicalAttributes?.Weight ?? 0,
-                        Length = prod.PhysicalAttributes?.Length ?? 0,
-                        Width = prod.PhysicalAttributes?.Width ?? 0,
-                        Height = prod.PhysicalAttributes?.Height ?? 0
-                    } : null
-                })
-            });
+                var result = orders.Select(o => new {
+                    o.Id,
+                    o.OrderNumber,
+                    o.Supplier,
+                    o.Status,
+                    o.Date,
+                    o.TotalUnits,
+                    Lines = o.Lines.Select(l => new {
+                        l.Sku,
+                        // e CRITICAL FIX: Use current product name from master, fallback to stored name
+                        ProductName = productDict.TryGetValue(l.Sku, out var p) ? p.Name : l.ProductName,
+                        l.ExpectedQty,
+                        l.ReceivedQty,
+                        RequiresSample = productDict.TryGetValue(l.Sku, out var pr) ? !pr.HasImage : true,
+                        Dimensions = productDict.TryGetValue(l.Sku, out var prod) ? new {
+                            Weight = prod.PhysicalAttributes?.Weight ?? 0,
+                            Length = prod.PhysicalAttributes?.Length ?? 0,
+                            Width = prod.PhysicalAttributes?.Width ?? 0,
+                            Height = prod.PhysicalAttributes?.Height ?? 0
+                        } : null
+                    })
+                });
 
-            return Ok(result);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[API-ERROR] GetOrders failed.");
+                return StatusCode(500, new { error = ex.Message, details = ex.ToString() });
+            }
         }
 
 
