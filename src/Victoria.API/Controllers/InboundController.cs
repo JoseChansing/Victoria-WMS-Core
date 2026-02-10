@@ -84,6 +84,7 @@ namespace Victoria.API.Controllers
                     ProductName = productDict.TryGetValue(l.Sku, out var p) ? p.Name : l.ProductName,
                     l.ExpectedQty,
                     l.ReceivedQty,
+                    RequiresSample = productDict.TryGetValue(l.Sku, out var pr) ? !pr.HasImage : true,
                     Dimensions = productDict.TryGetValue(l.Sku, out var prod) ? new {
                         Weight = prod.PhysicalAttributes?.Weight ?? 0,
                         Length = prod.PhysicalAttributes?.Length ?? 0,
@@ -164,6 +165,29 @@ namespace Victoria.API.Controllers
             await _session.SaveChangesAsync();
 
             return Ok(new { Message = "Order reset successfully", OrderId = orderId });
+        }
+
+        [HttpDelete("{orderId}")]
+        public async Task<IActionResult> DeleteOrder(string orderId)
+        {
+            var order = await _session.LoadAsync<InboundOrder>(orderId);
+            if (order == null) return NotFound("Order not found");
+
+            _logger.LogInformation($"Deleting order {orderId} and its LPNs.");
+
+            var lpns = await _session.Query<Lpn>()
+                .Where(x => x.SelectedOrderId == orderId)
+                .ToListAsync();
+            
+            foreach (var lpn in lpns)
+            {
+                _session.Delete(lpn);
+            }
+
+            _session.Delete(order);
+            await _session.SaveChangesAsync();
+
+            return Ok(new { Message = "Order and its LPNs deleted successfully", OrderId = orderId });
         }
 
         [HttpPost("{id}/close")]

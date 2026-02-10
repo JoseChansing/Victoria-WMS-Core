@@ -35,6 +35,33 @@ namespace Victoria.Infrastructure.Integration.Odoo
                     using (var scope = _serviceProvider.CreateScope())
                     {
                         var odooClient = scope.ServiceProvider.GetRequiredService<IOdooRpcClient>();
+                        
+                        // --- ODOO CONNECTION TEST (NO SYNC) ---
+                        Console.WriteLine("[ODOO TEST] Authenticating...");
+                        try 
+                        {
+                            var uid = await odooClient.AuthenticateAsync();
+                            if (uid > 0)
+                            {
+                                Console.WriteLine($"[ODOO TEST] ✅ Connection SUCCESS! Authenticated as UID: {uid}");
+                                _logger.LogInformation("Odoo Connection Verified. UID: {Uid}", uid);
+                            }
+                            else
+                            {
+                                Console.WriteLine($"[ODOO TEST] ❌ Connection FAILED. UID returned: {uid}");
+                                _logger.LogError("Odoo Authentication failed.");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[ODOO TEST] ❌ Connection EXCEPTION: {ex.Message}");
+                            _logger.LogError(ex, "Odoo Connection Exception");
+                        }
+
+                        Console.WriteLine("[ODOO TEST] Starting Limited Sync (Preload 100)...");
+                        
+                        // --------------------------------------
+
                         var productSync = scope.ServiceProvider.GetRequiredService<ProductSyncService>();
                         var orderSync = scope.ServiceProvider.GetRequiredService<InboundOrderSyncService>();
                         var outboundSync = scope.ServiceProvider.GetRequiredService<Victoria.Inventory.Application.Services.OutboundOrderSyncService>();
@@ -44,11 +71,13 @@ namespace Victoria.Infrastructure.Integration.Odoo
                         // 1. Products
                         await productSync.SyncAllAsync(odooClient);
                         
+                        /* 
                         // 2. Inbound Orders
                         await orderSync.SyncAllAsync(odooClient);
 
                         // 3. Outbound Orders (Phase 4)
                         await outboundSync.SyncOrdersAsync();
+                        */
 
                         Console.WriteLine("[WORKER] Sync Cycle Completed.");
                     }

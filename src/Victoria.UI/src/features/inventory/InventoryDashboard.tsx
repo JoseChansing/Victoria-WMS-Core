@@ -10,6 +10,7 @@ import {
     Layout,
 } from 'lucide-react';
 import api from '../../api/axiosConfig';
+import { LpnHistoryModal } from './components/LpnHistoryModal';
 
 interface InventoryItem {
     id: string;
@@ -24,25 +25,26 @@ interface InventoryItem {
 }
 
 const LPN_TYPES: Record<number, string> = {
-    0: 'Suelto',
+    0: 'Loose',
     1: 'Pack',
     2: 'Pallet'
 };
 
 const LPN_STATUS: Record<number, string> = {
-    0: 'Creado',
-    1: 'Recibido',
-    2: 'Ubicado',
-    3: 'Asignado',
+    0: 'Created',
+    1: 'Received',
+    2: 'Stowed',
+    3: 'Allocated',
     4: 'Picked',
-    5: 'Empacado',
-    6: 'Despachado'
+    5: 'Packed',
+    6: 'Dispatched'
 };
 
 export const InventoryDashboard = () => {
     const [inventory, setInventory] = useState<InventoryItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
+    const [selectedLpnId, setSelectedLpnId] = useState<string | null>(null);
 
     const handlePrintLabel = (lpnId: string) => {
         const url = `${api.defaults.baseURL}/printing/lpn/${lpnId}/label`;
@@ -85,14 +87,15 @@ export const InventoryDashboard = () => {
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
-            {/* Header */}
+            {/* ... stats and layout code ... */}
+            {/* Header omitted for brevity in targetContent but included in replacement to match file start */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <h2 className="text-2xl font-black text-white tracking-tight flex items-center gap-2">
                         <Package className="text-corp-accent w-8 h-8" />
-                        Visor de LPNs (Maestro)
+                        LPN Viewer (Master)
                     </h2>
-                    <p className="text-slate-400 font-medium">Control de unidades por contenedor y contenedor principal</p>
+                    <p className="text-slate-400 font-medium">Unit control by container and master container</p>
                 </div>
                 <div className="flex items-center gap-3">
                     <button
@@ -103,9 +106,9 @@ export const InventoryDashboard = () => {
                     </button>
                     <div className="h-8 w-[1px] bg-corp-secondary" />
                     <div className="bg-corp-accent/10 px-4 py-2 rounded-xl border border-corp-accent/20">
-                        <span className="text-xs font-bold text-corp-accent uppercase tracking-widest leading-none block mb-0.5">Total Unidades</span>
+                        <span className="text-xs font-bold text-corp-accent uppercase tracking-widest leading-none block mb-0.5">Total Units</span>
                         <span className="text-lg font-black text-white leading-none">
-                            {inventory.reduce((acc, curr) => acc + curr.quantity, 0).toLocaleString()} <span className="text-xs font-medium text-slate-400">UND</span>
+                            {inventory.reduce((acc, curr) => acc + curr.quantity, 0).toLocaleString()} <span className="text-xs font-medium text-slate-400">UNITS</span>
                         </span>
                     </div>
                 </div>
@@ -118,7 +121,7 @@ export const InventoryDashboard = () => {
                         <Activity className="w-6 h-6 text-emerald-500" />
                     </div>
                     <div>
-                        <p className="text-xs font-black text-slate-500 uppercase tracking-wider">Ubicados / Disp.</p>
+                        <p className="text-xs font-black text-slate-500 uppercase tracking-wider">Stowed / Avail.</p>
                         <p className="text-2xl font-black text-white">
                             {inventory.filter(i => i.status === 2).length} <span className="text-xs text-slate-400">LPNs</span>
                         </p>
@@ -129,7 +132,7 @@ export const InventoryDashboard = () => {
                         <Activity className="w-6 h-6 text-blue-500" />
                     </div>
                     <div>
-                        <p className="text-xs font-black text-slate-500 uppercase tracking-wider">Comprometidos (Picking)</p>
+                        <p className="text-xs font-black text-slate-500 uppercase tracking-wider">Committed (Picking)</p>
                         <p className="text-2xl font-black text-white">
                             {inventory.filter(i => i.status === 3).length} <span className="text-xs text-slate-400">LPNs</span>
                         </p>
@@ -144,7 +147,7 @@ export const InventoryDashboard = () => {
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                         <input
                             type="text"
-                            placeholder="Buscar por SKU, o LPN ID..."
+                            placeholder="Search by SKU, or LPN ID..."
                             className="w-full pl-11 pr-4 py-3 bg-corp-base/50 border border-corp-secondary/50 rounded-2xl text-sm text-white focus:ring-2 focus:ring-corp-accent transition-all font-medium placeholder:text-slate-600"
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
@@ -156,12 +159,12 @@ export const InventoryDashboard = () => {
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr className="bg-corp-accent/5 border-b border-corp-secondary/30">
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Información LPN</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">LPN Info</th>
                                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">SKU</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Cantidad</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Ubicación</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Estado</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Quantity</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Location</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Status</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-corp-secondary/20">
@@ -180,7 +183,7 @@ export const InventoryDashboard = () => {
                                             <div className="p-4 bg-corp-secondary/20 rounded-full">
                                                 <Package className="w-8 h-8 text-slate-600" />
                                             </div>
-                                            <p className="text-slate-500 font-bold">No se encontraron LPNs</p>
+                                            <p className="text-slate-500 font-bold">No LPNs found</p>
                                         </div>
                                     </td>
                                 </tr>
@@ -192,10 +195,13 @@ export const InventoryDashboard = () => {
                                                 <Layout className="w-5 h-5 text-slate-500 group-hover:text-corp-accent transition-colors" />
                                             </div>
                                             <div className="flex flex-col text-sm">
-                                                <span className="font-bold text-white group-hover:text-corp-accent transition-colors">
+                                                <button
+                                                    onClick={() => setSelectedLpnId(item.id)}
+                                                    className="text-left font-bold text-white hover:text-corp-accent transition-colors"
+                                                >
                                                     {item.id}
-                                                </span>
-                                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{LPN_TYPES[item.type] || 'Desconocido'}</span>
+                                                </button>
+                                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{LPN_TYPES[item.type] || 'Unknown'}</span>
                                             </div>
                                         </div>
                                     </td>
@@ -227,11 +233,15 @@ export const InventoryDashboard = () => {
                                             <button
                                                 onClick={() => handlePrintLabel(item.id)}
                                                 className="p-2 text-slate-500 hover:text-white hover:bg-corp-accent/40 rounded-lg transition-all border border-transparent hover:border-corp-secondary/50"
-                                                title="Imprimir Etiqueta"
+                                                title="Print Label"
                                             >
                                                 <Printer className="w-4 h-4" />
                                             </button>
-                                            <button className="p-2 text-slate-500 hover:text-white hover:bg-corp-accent/40 rounded-lg transition-all border border-transparent hover:border-corp-secondary/50">
+                                            <button
+                                                onClick={() => setSelectedLpnId(item.id)}
+                                                className="p-2 text-slate-500 hover:text-white hover:bg-corp-accent/40 rounded-lg transition-all border border-transparent hover:border-corp-secondary/50"
+                                                title="View History"
+                                            >
                                                 <History className="w-4 h-4" />
                                             </button>
                                             <div className="w-4" />
@@ -244,6 +254,14 @@ export const InventoryDashboard = () => {
                     </table>
                 </div>
             </div>
+
+            {/* History Modal */}
+            {selectedLpnId && (
+                <LpnHistoryModal
+                    lpnId={selectedLpnId}
+                    onClose={() => setSelectedLpnId(null)}
+                />
+            )}
         </div>
     );
 };

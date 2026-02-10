@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { ArrowLeft, Package, CheckCircle2, AlertCircle, ScanLine, Calculator, Printer, Radio } from 'lucide-react';
+import { ArrowLeft, Package, CheckCircle2, AlertCircle, ScanLine, Calculator, Printer, Radio, Camera } from 'lucide-react';
 import { useInbound } from '../../hooks/useInbound';
 import { zebraService } from '../../services/zebra.service';
 
@@ -86,7 +86,7 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
         try {
             if (mode === 'rfid') {
                 console.log("📡 Solicitando ZPL Batch para IDs:", lpnIds);
-                const response = await axios.post('http://localhost:5000/api/v1/printing/rfid/batch', { ids: lpnIds });
+                const response = await axios.post('/api/v1/printing/rfid/batch', { ids: lpnIds });
                 const zpl = response.data;
                 console.log("📝 ZPL Recibido (Longitud):", zpl.length);
 
@@ -107,7 +107,7 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                 console.log("🧹 Lista de LPNs recientes vaciada tras impresión exitosa.");
             } else {
                 console.log("📄 Generando etiquetas PDF (Standard)...");
-                const url = `http://localhost:5000/api/v1/printing/batch?ids=${lpnIds.join(',')}&t=${Date.now()}`;
+                const url = `/api/v1/printing/batch?ids=${lpnIds.join(',')}&t=${Date.now()}`;
                 setPrintUrl(url);
             }
         } catch (error: any) {
@@ -169,7 +169,7 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                     if (shouldPrint) {
                         console.log("🚀 Generando PDF automático...");
                         setTimeout(() => {
-                            const url = `http://localhost:5000/api/v1/printing/batch?ids=${lpnIds.join(',')}&t=${Date.now()}`;
+                            const url = `/api/v1/printing/batch?ids=${lpnIds.join(',')}&t=${Date.now()}`;
                             setPrintUrl(url);
                         }, 800);
                     }
@@ -208,18 +208,18 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                     <div>
                         <div className="flex items-center space-x-3">
                             <span className={`text-[10px] font-black ${mode === 'rfid' ? 'bg-blue-600' : 'bg-emerald-600'} text-white px-3 py-1 rounded-full uppercase tracking-widest shadow-lg shadow-black/40`}>
-                                RECEPCIÓN {mode === 'rfid' ? 'RFID' : 'STANDARD'}
+                                {mode === 'rfid' ? 'RFID' : 'STANDARD'} RECEIVING
                             </span>
                             <h1 className="text-2xl font-black tracking-tighter uppercase whitespace-nowrap">{order.orderNumber}</h1>
                         </div>
-                        <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mt-1">PROVEEDOR: <span className="text-slate-300">{order.supplier}</span></p>
+                        <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mt-1">SUPPLIER: <span className="text-slate-300">{order.supplier}</span></p>
                     </div>
                 </div>
 
                 <div className="flex items-center space-x-4">
                     <div className="flex items-center space-x-4 bg-corp-base/50 px-4 py-2 rounded-xl border border-corp-secondary/30 shadow-inner">
                         <div className="text-right">
-                            <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest">PROGRESO TOTAL</p>
+                            <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest">TOTAL PROGRESS</p>
                             <p className="text-sm font-black text-emerald-400 font-mono">{Math.round(progress)}%</p>
                         </div>
                         <div className="w-40 h-2.5 bg-corp-nav rounded-full overflow-hidden border border-corp-secondary/50">
@@ -243,31 +243,36 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                                         onClick={() => setReceiveMode('UNIT')}
                                         className={`flex-1 py-4 text-xs font-black uppercase tracking-[0.2em] rounded-xl transition-all ${receiveMode === 'UNIT' ? 'bg-corp-accent text-white shadow-xl shadow-black/40' : 'text-slate-500 hover:text-slate-300'}`}
                                     >
-                                        Recibo Suelto
+                                        Loose Receipt
                                     </button>
                                     <button
                                         onClick={() => setReceiveMode('BULK')}
                                         className={`flex-1 py-4 text-xs font-black uppercase tracking-[0.2em] rounded-xl transition-all ${receiveMode === 'BULK' ? 'bg-corp-accent text-white shadow-xl shadow-black/40' : 'text-slate-500 hover:text-slate-300'}`}
                                     >
-                                        Recibo Bulto
+                                        Bulk Receipt
                                     </button>
                                 </div>
 
                                 <form onSubmit={handleReceive} className="space-y-8">
-                                    <div className="space-y-4">
-                                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] ml-2">
-                                            ESCANEAR SKU O EAN
-                                        </label>
-                                        <div className="relative group">
-                                            <input
-                                                ref={inputRef}
-                                                type="text"
-                                                value={scanValue}
-                                                onChange={(e) => setScanValue(e.target.value)}
-                                                className="w-full text-3xl p-6 bg-corp-base/60 border-2 border-corp-secondary rounded-3xl focus:ring-4 focus:ring-corp-accent/20 focus:border-corp-accent transition-all font-mono uppercase text-center text-white placeholder:text-slate-700 shadow-inner"
-                                                placeholder="WAITING FOR SCAN..."
-                                            />
-                                            <ScanLine className="absolute left-6 top-1/2 -translate-y-1/2 w-8 h-8 text-slate-600 group-focus-within:text-blue-400 transition-colors animate-pulse" />
+                                    <div className="pt-4 border-t border-corp-secondary/30">
+                                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-4 text-center">
+                                            PHYSICAL ATTRIBUTES (OVERRIDE)
+                                        </p>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="relative group">
+                                                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] ml-2">
+                                                    SCAN SKU OR EAN
+                                                </label>
+                                                <input
+                                                    ref={inputRef}
+                                                    type="text"
+                                                    value={scanValue}
+                                                    onChange={(e) => setScanValue(e.target.value)}
+                                                    className="w-full text-3xl p-6 bg-corp-base/60 border-2 border-corp-secondary rounded-3xl focus:ring-4 focus:ring-corp-accent/20 focus:border-corp-accent transition-all font-mono uppercase text-center text-white placeholder:text-slate-700 shadow-inner"
+                                                    placeholder="WAITING FOR SCAN..."
+                                                />
+                                                <ScanLine className="absolute left-6 top-1/2 -translate-y-1/2 w-8 h-8 text-slate-600 group-focus-within:text-blue-400 transition-colors animate-pulse" />
+                                            </div>
                                         </div>
                                     </div>
 
@@ -275,7 +280,7 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                                         {receiveMode === 'UNIT' ? (
                                             <div className="animate-in zoom-in duration-300">
                                                 <label className="block text-[10px] font-black text-slate-500 uppercase mb-2 tracking-[0.2em] ml-2">
-                                                    CANTIDAD
+                                                    QUANTITY
                                                 </label>
                                                 <input
                                                     type="text"
@@ -287,8 +292,8 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                                             </div>
                                         ) : (
                                             <div className="grid grid-cols-2 gap-4 animate-in zoom-in duration-300">
-                                                <div>
-                                                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-2 text-center tracking-widest">CANT. BULTOS</label>
+                                                <div className="relative">
+                                                    <label className="absolute -top-2 left-2 px-1 bg-corp-nav text-[10px] font-bold text-slate-400">LPN COUNT</label>
                                                     <input
                                                         type="text"
                                                         value={lpnCount}
@@ -298,7 +303,7 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                                                     />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-2 text-center tracking-widest">UNITS/BULTO</label>
+                                                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-2 text-center tracking-widest">UNITS / LPN</label>
                                                     <input
                                                         type="text"
                                                         value={unitsPerLpn}
@@ -314,12 +319,12 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                                     {/* Editable Physical Attributes Section */}
                                     <div className="bg-corp-base/50 p-6 rounded-3xl border border-corp-secondary/30 space-y-4 animate-in fade-in duration-500">
                                         <div className="flex items-center justify-between mb-2">
-                                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Atributos Físicos (Editables)</label>
+                                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Physical Attributes (Editable)</label>
                                         </div>
 
                                         <div className="grid grid-cols-4 gap-3">
                                             <div>
-                                                <label className="block text-[8px] font-black text-slate-500 uppercase mb-1 text-center font-mono tracking-tighter">Peso (Kg)</label>
+                                                <label className="block text-[8px] font-black text-slate-500 uppercase mb-1 text-center font-mono tracking-tighter">Weight (Kg)</label>
                                                 <input
                                                     type="text"
                                                     value={manualWeight}
@@ -329,7 +334,7 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                                                 />
                                             </div>
                                             <div>
-                                                <label className="block text-[8px] font-black text-slate-500 uppercase mb-1 text-center font-mono tracking-tighter">Largo</label>
+                                                <label className="block text-[8px] font-black text-slate-500 uppercase mb-1 text-center font-mono tracking-tighter">Length</label>
                                                 <input
                                                     type="text"
                                                     value={manualLength}
@@ -339,7 +344,7 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                                                 />
                                             </div>
                                             <div>
-                                                <label className="block text-[8px] font-black text-slate-500 uppercase mb-1 text-center font-mono tracking-tighter">Ancho</label>
+                                                <label className="block text-[8px] font-black text-slate-500 uppercase mb-1 text-center font-mono tracking-tighter">Width</label>
                                                 <input
                                                     type="text"
                                                     value={manualWidth}
@@ -349,7 +354,7 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                                                 />
                                             </div>
                                             <div>
-                                                <label className="block text-[8px] font-black text-slate-500 uppercase mb-1 text-center font-mono tracking-tighter">Alto</label>
+                                                <label className="block text-[8px] font-black text-slate-500 uppercase mb-1 text-center font-mono tracking-tighter">Height</label>
                                                 <input
                                                     type="text"
                                                     value={manualHeight}
@@ -371,16 +376,22 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                                         >
                                             {isReceiving && <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>}
                                             <Printer className="w-6 h-6" />
-                                            <span>{isReceiving ? 'PROCESANDO...' : 'RECEPTAR E IMPRIMIR'}</span>
+                                            <span>{isReceiving ? 'PROCESSING...' : 'RECEIVE & PRINT'}</span>
                                         </button>
 
                                         <button
                                             type="submit"
-                                            disabled={isReceiving || !scanValue}
-                                            className={`w-full py-4 rounded-2xl font-black text-sm shadow-xl transform active:scale-95 transition-all flex items-center justify-center space-x-3 border
-                                                    ${isReceiving ? 'bg-slate-800 text-slate-600 border-slate-700 cursor-not-allowed' : 'bg-corp-base/60 hover:bg-slate-800 text-slate-400 shadow-black/40 border-corp-secondary'}`}
+                                            disabled={isReceiving}
+                                            className="w-full py-5 bg-gradient-to-r from-blue-600 to-blue-500 rounded-2xl font-black uppercase tracking-[0.2em] shadow-lg shadow-blue-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:grayscale flex items-center justify-center space-x-3 text-white group"
                                         >
-                                            <span>SÓLO CONFIRMAR</span>
+                                            {isReceiving ? (
+                                                <div className="w-6 h-6 border-4 border-white/30 border-t-white rounded-full animate-spin" />
+                                            ) : (
+                                                <>
+                                                    <CheckCircle2 className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                                                    <span>CONFIRM RECEIPT</span>
+                                                </>
+                                            )}
                                         </button>
                                     </div>
 
@@ -392,7 +403,7 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                                                     <div className="p-1.5 bg-blue-900/40 rounded-lg mr-2 border border-blue-800/50">
                                                         <Calculator className="w-4 h-4" />
                                                     </div>
-                                                    <span className="text-[9px] font-bold uppercase tracking-widest leading-tight">Peso<br />Total</span>
+                                                    <span className="text-[9px] font-bold uppercase tracking-widest leading-tight">Total<br />Weight</span>
                                                 </div>
                                                 <div className="text-right self-end w-full truncate">
                                                     <span className="text-xl font-black text-white">{totalEstimatedWeight.toFixed(2)}</span>
@@ -407,7 +418,7 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                                                     <div className="p-1.5 bg-emerald-900/40 rounded-lg mr-2 border border-emerald-800/50">
                                                         <Package className="w-4 h-4" />
                                                     </div>
-                                                    <span className="text-[9px] font-bold uppercase tracking-widest leading-tight">Vol.<br />Total</span>
+                                                    <span className="text-[9px] font-bold uppercase tracking-widest leading-tight">Total<br />Volume</span>
                                                 </div>
                                                 <div className="text-right self-end w-full truncate">
                                                     <span className="text-xl font-black text-white">{totalEstimatedVolume.toFixed(4)}</span>
@@ -439,7 +450,7 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                                                 }`}
                                         >
                                             {mode === 'rfid' ? <Radio className="w-4 h-4" /> : <Printer className="w-4 h-4" />}
-                                            <span>{mode === 'rfid' ? 'Programar Lote RFID' : 'Imprimir Lote'}</span>
+                                            <span>{mode === 'rfid' ? 'Program RFID Batch' : 'Print Batch'}</span>
                                         </button>
                                     )}
                                 </div>
@@ -448,6 +459,13 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                             {/* SKU Info Card (Moved inside left column to avoid grid break) */}
                             {selectedLine && (
                                 <div className="bg-corp-nav/40 backdrop-blur-md rounded-[2.5rem] p-10 border border-corp-secondary/50 shadow-2xl space-y-8 animate-in zoom-in duration-500">
+                                    <div className="flex items-center justify-between mb-6">
+                                        <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                            <Package className="w-4 h-4 text-blue-400" />
+                                            REQUISITION LINES
+                                        </h2>
+                                        <span className="text-[10px] font-bold bg-corp-base px-2 py-1 rounded text-slate-500">{order.lines.length} SKUs</span>
+                                    </div>
                                     <div className="flex items-center space-x-6">
                                         <div className="p-5 bg-corp-base rounded-[2rem] border border-corp-secondary/50 text-blue-400 shadow-inner">
                                             <Package className="w-10 h-10" />
@@ -459,7 +477,7 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                                                 <span className="text-slate-700">|</span>
                                                 <div className="flex items-center space-x-2 bg-blue-500/10 px-3 py-1 rounded-lg border border-blue-500/20 shadow-inner group-hover:border-blue-500/40 transition-all">
                                                     <span className="text-[9px] font-black text-blue-400 uppercase tracking-widest">
-                                                        PESO: {selectedLine.dimensions?.weight || 0}kg |
+                                                        WEIGHT: {selectedLine.dimensions?.weight || 0}kg |
                                                         DIM: {selectedLine.dimensions?.length || 0}x{selectedLine.dimensions?.width || 0}x{selectedLine.dimensions?.height || 0}cm |
                                                         VOL: {((selectedLine.dimensions?.length || 0) * (selectedLine.dimensions?.width || 0) * (selectedLine.dimensions?.height || 0) / 1000000).toFixed(4)}m³
                                                     </span>
@@ -472,14 +490,14 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                                         <div className="bg-corp-base/40 p-6 rounded-3xl border border-corp-secondary/30 shadow-inner">
                                             <div className="flex items-center space-x-3 mb-3">
                                                 <Calculator className="w-4 h-4 text-emerald-400" />
-                                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Peso Unitario</span>
+                                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Unit Weight</span>
                                             </div>
                                             <p className="text-2xl font-black text-white font-mono">{selectedLine.dimensions?.weight || 0} <span className="text-[10px] text-slate-500">kg</span></p>
                                         </div>
                                         <div className="bg-corp-base/40 p-6 rounded-3xl border border-corp-secondary/30 shadow-inner">
                                             <div className="flex items-center space-x-3 mb-3">
                                                 <ScanLine className="w-4 h-4 text-blue-400" />
-                                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Dimensiones</span>
+                                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Dimensions</span>
                                             </div>
                                             <p className="text-lg font-black text-white font-mono">
                                                 {selectedLine.dimensions?.length || 0}x{selectedLine.dimensions?.width || 0}x{selectedLine.dimensions?.height || 0}
@@ -495,11 +513,11 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                             <div className="bg-corp-nav/40 border border-corp-secondary/50 rounded-[2.5rem] shadow-2xl overflow-hidden h-full flex flex-col">
                                 <div className="p-8 bg-corp-accent/10 border-b border-corp-secondary/30 flex items-center justify-between">
                                     <div>
-                                        <h3 className="font-black text-white text-md tracking-[0.2em] uppercase">LÍNEAS DE REQUISICIÓN</h3>
-                                        <p className="text-xs text-slate-500 font-bold mt-1 uppercase tracking-widest">CONTROL DE AVANCE EN TIEMPO REAL</p>
+                                        <h3 className="font-black text-white text-md tracking-[0.2em] uppercase">REQUISITION LINES</h3>
+                                        <p className="text-xs text-slate-500 font-bold mt-1 uppercase tracking-widest">REAL-TIME PROGRESS CONTROL</p>
                                     </div>
                                     <div className="bg-corp-base/50 px-5 py-2 rounded-xl border border-corp-secondary/30">
-                                        <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">{order.lines.length} SKUS TOTALES</span>
+                                        <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">{order.lines.length} TOTAL SKUS</span>
                                     </div>
                                 </div>
                                 <ul className="divide-y divide-corp-secondary/10 flex-1 overflow-y-auto custom-scrollbar">
@@ -512,7 +530,15 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                                                         <Package className="w-7 h-7" />
                                                     </div>
                                                     <div>
-                                                        <p className="font-black text-white text-lg tracking-tight">{line.sku}</p>
+                                                        <div className="flex items-center gap-2">
+                                                            <p className="font-black text-white text-lg tracking-tight">{line.sku}</p>
+                                                            {line.requiresSample && (
+                                                                <div className="flex items-center gap-1 px-2 py-0.5 bg-amber-500/10 border border-amber-500/20 rounded-md">
+                                                                    <Camera className="w-3 h-3 text-amber-500" />
+                                                                    <span className="text-[8px] font-black text-amber-500 uppercase tracking-tighter">Photo Required</span>
+                                                                </div>
+                                                            )}
+                                                        </div>
                                                         <p className="text-xs text-slate-400 font-bold uppercase truncate max-w-[250px]">{line.productName}</p>
                                                     </div>
                                                 </div>
@@ -527,8 +553,14 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                                                                 {line.expectedQty}
                                                             </span>
                                                         </div>
-                                                        {isComplete && <CheckCircle2 className="w-6 h-6 text-emerald-500" />}
+                                                        <div className="text-right">
+                                                            <span className="text-[10px] font-bold text-slate-500 uppercase block">RECEIVED</span>
+                                                            <span className={`text-sm font-black font-mono ${line.receivedQty >= line.expectedQty ? 'text-emerald-400' : 'text-white'}`}>
+                                                                {line.receivedQty} <span className="text-slate-500 text-[10px]">/ {line.expectedQty}</span>
+                                                            </span>
+                                                        </div>
                                                     </div>
+                                                    {isComplete && <CheckCircle2 className="w-6 h-6 text-emerald-500" />}
                                                     <div className="w-32 h-1.5 bg-corp-base rounded-full overflow-hidden border border-corp-secondary/20">
                                                         <div
                                                             className={`h-full transition-all duration-500 ${isComplete ? 'bg-emerald-500' : 'bg-blue-600'}`}

@@ -112,7 +112,32 @@ namespace Victoria.Inventory.Application.Commands
                     // STEP 1: Determine Type and Location (STRICT FORCE)
                     // If Standard/Loose mode is used (IsUnitMode), we IGNORE quantity/loops and force Loose
                     var lpnType = command.IsUnitMode ? LpnType.Loose : ((lpnCount > 1 || unitsPerLpn > 1) ? LpnType.Pallet : LpnType.Loose);
-                    var initialLocation = lpnType == LpnType.Pallet ? "DOCK-LPN" : "DOCK-UNITS";
+                    
+                    // Allow explicit PHOTO-STATION via StationId or a custom logic
+                    var isStationSample = command.StationId == "PHOTO-STATION" || command.StationId == "PHOTO" || command.RawScan == "PHOTO-STATION";
+                    var initialLocation = isStationSample ? "PHOTO-STATION" : (lpnType == LpnType.Pallet ? "DOCK-LPN" : "DOCK-UNITS");
+
+                    // STEP 1.5: Golden Sample Validation (Photo Requirement)
+                    if (!isStationSample && initialLocation != "PHOTO-STATION")
+                    {
+                        var product = await _session.LoadAsync<Product>(skuValue);
+                        if (product != null && !product.HasImage)
+                        {
+                            var order = await _session.LoadAsync<InboundOrder>(command.OrderId);
+                            if (order != null)
+                            {
+                                var line = order.Lines.FirstOrDefault(l => l.Sku == skuValue);
+                                if (line != null)
+                                {
+                                    // Rule: If no image, must leave at least 1 unit for PHOTO-STATION
+                                    if (line.ReceivedQty + unitsPerLpn >= line.ExpectedQty)
+                                    {
+                                        throw new InvalidOperationException($"[GOLDEN-SAMPLE] El producto {skuValue} no tiene imagen en Odoo. DEBE recibir al menos 1 unidad en PHOTO-STATION antes de completar la línea.");
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     // STEP 2: Consolidation Logic (Bucket Pattern)
                     if (lpnType == LpnType.Loose)

@@ -10,13 +10,11 @@ namespace Victoria.Inventory.Domain.Events
         string Description,
         int Quantity,
         string TargetLocation,
-        DateTime ImportDate,
-        string UserId,
+        string User,
+        DateTime OccurredOn,
         string StationId
     ) : IDomainEvent
     {
-        public Guid EventId { get; init; } = Guid.NewGuid();
-        public DateTime OccurredOn { get; init; } = ImportDate;
-        public string CreatedBy => UserId;
+        public string CreatedBy => User;
     }
 }

@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Marten;
+using Marten.Linq;
 using Victoria.Inventory.Domain.Aggregates;
 using Victoria.Core.Interfaces;
 
@@ -26,13 +27,62 @@ namespace Victoria.API.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetProducts()
+        public async Task<IActionResult> GetProducts(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 50,
+            [FromQuery] string? search = null)
         {
-            var products = await _session.Query<Product>()
-                .Take(1000)
-                .ToListAsync();
+            try 
+            {
+                // Basic validation
+                if (page < 1) page = 1;
+                if (pageSize < 1) pageSize = 50;
+                if (pageSize > 1000) pageSize = 1000; // Cap max size
 
-            return Ok(products);
+                QueryStatistics stats = null;
+                var query = _session.Query<Product>().AsQueryable();
+
+                // Apply search filter if provided
+                if (!string.IsNullOrWhiteSpace(search))
+                {
+                    var searchTerm = search.Trim();
+                    if (searchTerm.Contains(","))
+                    {
+                        var skus = searchTerm.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                                             .Select(s => s.Trim().ToUpper())
+                                             .ToList();
+                        
+                        query = query.Where(x => x.Sku.In(skus));
+                    }
+                    else
+                    {
+                        // Case-insensitive filtering via Marten
+                        query = query.Where(x => 
+                            x.Sku.Contains(searchTerm, StringComparison.InvariantCultureIgnoreCase) || 
+                            x.Name.Contains(searchTerm, StringComparison.InvariantCultureIgnoreCase) ||
+                            x.Barcode.Contains(searchTerm, StringComparison.InvariantCultureIgnoreCase));
+                    }
+                }
+
+                var products = await query
+                    .Stats(out stats)
+                    .OrderBy(x => x.Sku) // Default sort
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .ToListAsync();
+
+                var result = new Victoria.Core.Models.PagedResult<Product>(
+                    products, 
+                    stats.TotalResults, 
+                    page, 
+                    pageSize);
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = $"Error al obtener productos: {ex.Message}" });
+            }
         }
 
         [HttpDelete("{sku}")]

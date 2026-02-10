@@ -233,7 +233,7 @@ namespace Victoria.Inventory.Domain.Aggregates
                 PhysicalAttributes = PhysicalAttributes.Empty();
                 Status = LpnStatus.Putaway;
                 CurrentLocationId = e.TargetLocation;
-                CreatedAt = e.ImportDate;
+                CreatedAt = e.OccurredOn;
                 Quantity = 0; // Initialize for addition
             }
             Quantity += e.Quantity; 

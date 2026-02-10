@@ -76,8 +76,8 @@ namespace Victoria.Inventory.Application.Services
                         Description: description,
                         Quantity: quantity,
                         TargetLocation: targetLocation,
-                        ImportDate: importDate,
-                        UserId: userId,
+                        User: userId,
+                        OccurredOn: importDate,
                         StationId: stationId
                     );
                     

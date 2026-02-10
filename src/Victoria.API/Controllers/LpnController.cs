@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Marten;
 using Microsoft.AspNetCore.Mvc;
 using Victoria.Inventory.Domain.Aggregates;
+using Victoria.Infrastructure.Projections;
 
 namespace Victoria.API.Controllers
 {
@@ -27,32 +28,22 @@ namespace Victoria.API.Controllers
         }
 
         [HttpGet("{id}")]
-        public async Task<ActionResult<Lpn>> GetLpn(string id)
+        public async Task<ActionResult<LpnDetailView>> GetLpnDetail(string id)
         {
-            var lpn = await _session.LoadAsync<Lpn>(id);
-            if (lpn == null) return NotFound();
-            return Ok(lpn);
+            var detail = await _session.LoadAsync<LpnDetailView>(id);
+            if (detail == null) return NotFound();
+            return Ok(detail);
         }
 
         [HttpGet("{id}/history")]
-        public async Task<ActionResult<IEnumerable<object>>> GetLpnHistory(string id)
+        public async Task<ActionResult<LpnHistoryView>> GetLpnHistory(string id)
         {
-            // Fetch raw events for this stream
-            // Events.FetchStreamAsync returns IReadOnlyList<IEvent>
-            var events = await _session.Events.FetchStreamAsync(id);
-            
-            if (events == null || !events.Any()) return NotFound(new { message = "No history found for this LPN" });
-
-            // Map to simple structure for UI
-            var history = events.Select(e => new 
+            var history = await _session.LoadAsync<LpnHistoryView>(id);
+            if (history == null)
             {
-                EventId = e.Id,
-                EventType = e.Data.GetType().Name,
-                Data = e.Data,
-                Timestamp = e.Timestamp,
-                Version = e.Version
-            });
-
+                // Devolvemos un objeto vacío en lugar de 404 para que la UI no falle
+                return Ok(new LpnHistoryView { Id = id, Entries = new List<LpnHistoryEntry>() });
+            }
             return Ok(history);
         }
     }

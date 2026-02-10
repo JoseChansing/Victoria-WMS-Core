@@ -8,6 +8,7 @@ export interface ReceiptLine {
     productName: string;
     expectedQty: number;
     receivedQty: number;
+    requiresSample: boolean;
     imageSource: ImageSource;
     dimensions?: {
         weight: number;

@@ -32,20 +32,20 @@ export const LoginPage: React.FC = () => {
                     </h1>
                     <div className="flex items-center justify-center space-x-2 text-slate-400 font-medium">
                         <ShieldCheck className="w-4 h-4 text-emerald-500" />
-                        <span className="text-sm tracking-wide uppercase">Torre de Control de Almacén</span>
+                        <span className="text-sm tracking-wide uppercase">Operations Command Center</span>
                     </div>
                 </div>
 
                 {/* Login Card */}
                 <div className="bg-corp-nav/60 backdrop-blur-2xl border border-corp-secondary/50 rounded-[2.5rem] p-10 shadow-3xl shadow-black/40 animate-in fade-in zoom-in duration-500">
                     <div className="mb-8">
-                        <h2 className="text-xl font-bold text-white mb-2">Bienvenido</h2>
-                        <p className="text-slate-400 text-sm">Ingrese sus credenciales para acceder al sistema.</p>
+                        <h2 className="text-xl font-bold text-white mb-2">Welcome</h2>
+                        <p className="text-slate-400 text-sm">Enter your credentials to access the system.</p>
                     </div>
 
                     <form onSubmit={handleLogin} className="space-y-5">
                         <div className="space-y-2">
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Compañía / Tenant</label>
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Company / Tenant</label>
                             <div className="relative group">
                                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                                     <Building2 className="h-5 w-5 text-slate-500 group-focus-within:text-blue-400 transition-colors" />
@@ -60,7 +60,7 @@ export const LoginPage: React.FC = () => {
                         </div>
 
                         <div className="space-y-2">
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Usuario</label>
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">User</label>
                             <div className="relative group">
                                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                                     <User className="h-5 w-5 text-slate-500 group-focus-within:text-blue-400 transition-colors" />
@@ -75,7 +75,7 @@ export const LoginPage: React.FC = () => {
                         </div>
 
                         <div className="space-y-2">
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Contraseña</label>
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Password</label>
                             <div className="relative group">
                                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                                     <Lock className="h-5 w-5 text-slate-500 group-focus-within:text-blue-400 transition-colors" />
@@ -93,7 +93,7 @@ export const LoginPage: React.FC = () => {
                             type="submit"
                             className="w-full mt-6 bg-corp-accent hover:bg-blue-600 text-white font-black py-4 px-6 rounded-2xl shadow-xl shadow-blue-900/20 transition-all transform hover:-translate-y-1 active:scale-95 flex items-center justify-center space-x-2 border border-blue-400/20"
                         >
-                            <span>ENTRAR AL SISTEMA</span>
+                            <span>ENTER SYSTEM</span>
                             <Lock className="w-4 h-4 ml-2" />
                         </button>
                     </form>

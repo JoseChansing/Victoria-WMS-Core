@@ -50,6 +50,31 @@ namespace Victoria.Infrastructure.Services
 
                         var diagClient = diagScope.ServiceProvider.GetRequiredService<IOdooRpcClient>();
                         
+                        // --- FIELD DISCOVERY (TEMP - RE-ADDED) ---
+                        try 
+                        {
+                            Console.WriteLine("[FIELD-DISCOVERY] Fetching product.product fields...");
+                            // execute_kw(db, uid, password, 'product.product', 'fields_get', [], {'attributes': ['string', 'help', 'type']})
+                            var allFields = await diagClient.ExecuteKwAsync<Dictionary<string, object>>("product.product", "fields_get", new object[] { }, new Dictionary<string, object> { { "attributes", new string[] { "string", "type" } } });
+                            
+                            var potentialFields = allFields.Keys
+                                .Where(k => k.Contains("marca", StringComparison.OrdinalIgnoreCase) || 
+                                            k.Contains("brand", StringComparison.OrdinalIgnoreCase) || 
+                                            k.Contains("lados", StringComparison.OrdinalIgnoreCase) || 
+                                            k.Contains("side", StringComparison.OrdinalIgnoreCase) ||
+                                            k.StartsWith("x_", StringComparison.OrdinalIgnoreCase))
+                                .ToList();
+
+                            Console.WriteLine($"[FIELD-DISCOVERY] Found {potentialFields.Count} potential fields:");
+                            await System.IO.File.WriteAllTextAsync("ODOO_FIELDS_DUMP.txt", string.Join(Environment.NewLine, potentialFields));
+                            foreach(var f in potentialFields) Console.WriteLine($"   -> {f}");
+                        }
+                        catch(Exception exField)
+                        {
+                            Console.WriteLine($"[FIELD-DISCOVERY] ERROR: {exField.Message}");
+                        }
+                        // ------------------------------
+
                         // Traer 1 producto cualquiera para ver su fecha
                         var diagFields = new string[] { "write_date", "display_name" };
                         // Empty domain
@@ -183,7 +208,8 @@ namespace Victoria.Infrastructure.Services
                 new { Code = "DOCK-LPN", Profile = LocationProfile.Reserve, IsPickable = false },
                 new { Code = "DOCK-UNITS", Profile = LocationProfile.Picking, IsPickable = false },
                 new { Code = "STAGE-RESERVE", Profile = LocationProfile.Reserve, IsPickable = true },
-                new { Code = "STAGE-PICKING", Profile = LocationProfile.Picking, IsPickable = true }
+                new { Code = "STAGE-PICKING", Profile = LocationProfile.Picking, IsPickable = true },
+                new { Code = "PHOTO-STATION", Profile = LocationProfile.Picking, IsPickable = false }
             };
 
             var existingLocations = await session.Query<Location>().ToListAsync();

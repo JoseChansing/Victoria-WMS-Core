@@ -42,6 +42,8 @@ builder.Services.AddMarten(opts =>
     // Projections (Phase 3)
     opts.Projections.Add<InventoryByItemProjection>(Marten.Events.Projections.ProjectionLifecycle.Inline);
     opts.Projections.Add<InventoryByLocationProjection>(Marten.Events.Projections.ProjectionLifecycle.Inline);
+    opts.Projections.Add<LpnDetailProjection>(Marten.Events.Projections.ProjectionLifecycle.Inline);
+    opts.Projections.Add<LpnHistoryProjection>(Marten.Events.Projections.ProjectionLifecycle.Inline);
     opts.Projections.Snapshot<Victoria.Inventory.Domain.Aggregates.Lpn>(Marten.Events.Projections.SnapshotLifecycle.Inline);
 
 }).UseLightweightSessions();
@@ -89,10 +91,12 @@ builder.Services.AddSingleton(new Victoria.Infrastructure.Services.EpcEncoderSer
 
 // Background Workers
 // 62: Background Workers
-builder.Services.AddHostedService<Victoria.Infrastructure.Integration.Odoo.OdooPollingService>();
+// builder.Services.AddHostedService<Victoria.Infrastructure.Integration.Odoo.OdooPollingService>();
 
 // Servicio de Carga Inicial (Auto-Sync al inicio)
 builder.Services.AddHostedService<Victoria.Infrastructure.Services.InitialDataLoader>();
+// Worker Recurrente (Cada 5 min)
+builder.Services.AddHostedService<Victoria.Infrastructure.Services.RecurringSyncWorker>();
 
 // 5a. CORS Policy (Global Open for Dev)
 builder.Services.AddCors(options =>

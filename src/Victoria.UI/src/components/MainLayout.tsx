@@ -46,12 +46,12 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         { icon: <LayoutDashboard className="w-5 h-5" />, label: 'Dashboard', path: '/inventory' },
         { icon: <Truck className="w-5 h-5 text-blue-400" />, label: '📡 Inbound RFID', path: '/inbound?mode=rfid' },
         { icon: <Truck className="w-5 h-5 text-emerald-400" />, label: '🖨️ Inbound Standard', path: '/inbound?mode=standard' },
-        { icon: <Package className="w-5 h-5" />, label: 'Maestro LPNs', path: '/inventory-master' },
-        { icon: <Box className="w-5 h-5 text-blue-400" />, label: 'Inventario por Item', path: '/inventory-item' },
-        { icon: <MapPin className="w-5 h-5 text-emerald-400" />, label: 'Inventario por Ubicación', path: '/inventory-location' },
-        { icon: <Package className="w-5 h-5" />, label: 'Maestro SKUs', path: '/skus' },
-        { icon: <MapPin className="w-5 h-5" />, label: 'Maestro Ubicaciones', path: '/locations' },
-        { icon: <Truck className="w-5 h-5 text-orange-500" />, label: '📤 Outbound / Despachos', path: '/outbound' },
+        { icon: <Package className="w-5 h-5" />, label: 'LPN Master', path: '/inventory-master' },
+        { icon: <Box className="w-5 h-5 text-blue-400" />, label: 'Inventory by Item', path: '/inventory-item' },
+        { icon: <MapPin className="w-5 h-5 text-emerald-400" />, label: 'Inventory by Location', path: '/inventory-location' },
+        { icon: <Package className="w-5 h-5" />, label: 'SKU Master', path: '/skus' },
+        { icon: <MapPin className="w-5 h-5" />, label: 'Location Master', path: '/locations' },
+        { icon: <Truck className="w-5 h-5 text-orange-500" />, label: '📤 Outbound / Dispatch', path: '/outbound' },
     ];
 
     if (!user) return <>{children}</>;
@@ -66,7 +66,7 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                     </div>
                     <div>
                         <h1 className="text-xl font-bold tracking-tight text-white">Victoria WMS</h1>
-                        <p className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Torre de Control</p>
+                        <p className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Operations Command Center</p>
                     </div>
                 </div>
 
@@ -98,7 +98,7 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                         className="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-rose-400 hover:bg-rose-500/10 transition-all font-semibold text-sm"
                     >
                         <LogOut className="w-5 h-5" />
-                        <span>Cerrar Sesión</span>
+                        <span>Logout</span>
                     </button>
                 </div>
             </aside>

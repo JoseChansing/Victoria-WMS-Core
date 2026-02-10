@@ -65,40 +65,102 @@ namespace Victoria.Infrastructure.Integration.Odoo
             return _uid;
         }
 
-        public async Task<List<T>> SearchAndReadAsync<T>(string model, object[][] domain, string[] fields) where T : new()
+        public async Task<List<T>> SearchAndReadAsync<T>(string model, object[][] domain, string[] fields, int limit = 0, int offset = 0) where T : new()
         {
-            int uid = await AuthenticateAsync();
-            if (uid <= 0) 
-                throw new Exception($"Odoo Login failed for {_user}. Check credentials in Odoo Panel (API Keys).");
-            
-            var domainXml = BuildDomainXml(domain);
-            var fieldsXml = BuildFieldsXml(fields);
+            var kwargs = new Dictionary<string, object> { { "fields", fields } };
+            if (limit > 0) kwargs["limit"] = limit;
+            if (offset > 0) kwargs["offset"] = offset;
 
-            var xml = $@"<?xml version=""1.0""?>
-<methodCall>
-<methodName>execute_kw</methodName>
-<params>
-<param><value><string>{System.Security.SecurityElement.Escape(_db)}</string></value></param>
-<param><value><int>{uid}</int></value></param>
-<param><value><string>{System.Security.SecurityElement.Escape(_apiKey)}</string></value></param>
-<param><value><string>{model}</string></value></param>
-<param><value><string>search_read</string></value></param>
-<param><value><array><data><value>{domainXml}</value></data></array></value></param>
-<param>
-<value>
-<struct>
-<member>
-<name>fields</name>
-<value>{fieldsXml}</value>
-</member>
-</struct>
-</value>
-</param>
-</params>
-</methodCall>";
+            object? response = null;
+            int retries = 3;
+            while (retries > 0)
+            {
+                try 
+                {
+                    response = await ExecuteActionAsync(model, "search_read", new object[] { domain }, kwargs);
+                    break;
+                }
+                catch (Exception ex) when (retries > 1)
+                {
+                    _logger.LogWarning("[ODOO-RPC] SearchAndRead failed, retrying... ({Retries} left). Error: {Msg}", retries - 1, ex.Message);
+                    await Task.Delay(2000);
+                    retries--;
+                }
+                catch (Exception)
+                {
+                    throw;
+                }
+            }
 
-            var response = await SendAsync("object", xml);
-            return MapResponseToType<T>(response);
+            if (response == null) return new List<T>();
+
+            if (response is System.Collections.IEnumerable list)
+            {
+                var results = new List<T>();
+                var json = System.Text.Json.JsonSerializer.Serialize(response);
+                var options = new System.Text.Json.JsonSerializerOptions 
+                { 
+                    PropertyNameCaseInsensitive = true,
+                    NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString
+                };
+                
+                try 
+                {
+                    return System.Text.Json.JsonSerializer.Deserialize<List<T>>(json, options) ?? new List<T>();
+                }
+                catch (System.Text.Json.JsonException ex)
+                {
+                    _logger.LogWarning("[ODOO-RPC] JSON Deserialization failed: {Msg}. Falling back to manual mapping.", ex.Message);
+                    // Fallback to manual mapping if JSON fails
+                    foreach (var item in list)
+                    {
+                        if (item is Dictionary<string, object?> dict)
+                        {
+                            var obj = new T();
+                            var props = typeof(T).GetProperties();
+                            foreach (var prop in props)
+                            {
+                                // Handle JsonPropertyName attribute
+                                var attr = (System.Text.Json.Serialization.JsonPropertyNameAttribute?)Attribute.GetCustomAttribute(prop, typeof(System.Text.Json.Serialization.JsonPropertyNameAttribute));
+                                string key = attr?.Name ?? prop.Name;
+                                
+                                // Try finding by key, case-insensitive or underscore-insensitive
+                                string? foundKey = null;
+                                if (dict.ContainsKey(key)) foundKey = key;
+                                else foundKey = dict.Keys.FirstOrDefault(k => k.Equals(key, StringComparison.OrdinalIgnoreCase) || k.Replace("_", "").Equals(key.Replace("_", ""), StringComparison.OrdinalIgnoreCase));
+
+                                if (foundKey != null && dict.TryGetValue(foundKey, out var val))
+                                {
+                                    if (val == null || (val is bool b && !b && prop.PropertyType != typeof(bool)))
+                                    {
+                                        // Skip or set to null/default
+                                        continue;
+                                    }
+
+                                    try 
+                                    {
+                                        if (prop.PropertyType == typeof(int) || prop.PropertyType == typeof(Int32))
+                                            prop.SetValue(obj, Convert.ToInt32(val));
+                                        else if (prop.PropertyType == typeof(double))
+                                            prop.SetValue(obj, Convert.ToDouble(val, System.Globalization.CultureInfo.InvariantCulture));
+                                        else if (prop.PropertyType == typeof(string))
+                                            prop.SetValue(obj, val?.ToString());
+                                        else if (prop.PropertyType == typeof(bool))
+                                            prop.SetValue(obj, (val is bool bv && bv) || val?.ToString() == "1" || val?.ToString()?.ToLower() == "true");
+                                        else
+                                            prop.SetValue(obj, val);
+                                    }
+                                    catch { /* skip error */ }
+                                }
+                            }
+                            results.Add(obj);
+                        }
+                    }
+                    return results;
+                }
+            }
+
+            return new List<T>();
         }
 
         private List<T> MapResponseToType<T>(string xml) where T : new()
@@ -135,40 +197,41 @@ namespace Victoria.Infrastructure.Integration.Odoo
 
                     if (prop != null)
                     {
-                        object? finalValue = null;
-                        var innerArray = valueNode.SelectSingleNode("array/data");
-                        if (innerArray != null)
-                        {
-                            var firstValNode = innerArray.SelectSingleNode("value/*");
-                            if (firstValNode != null) finalValue = firstValNode.InnerText;
-                        }
-                        else
-                        {
-                            var valNode = valueNode.SelectSingleNode("*");
-                            finalValue = valNode?.InnerText ?? valueNode.InnerText;
-                        }
+                        var innerValueNode = valueNode.SelectSingleNode("*");
+                        object? finalValue = ParseValueNode(innerValueNode);
 
                         if (finalValue != null)
                         {
-                            try {
-                                string valStr = finalValue.ToString() ?? "";
-                                if (prop.PropertyType == typeof(int) || prop.PropertyType == typeof(Int32))
+                            try 
+                            {
+                                // If target is object, just set it (will preserve Lists if it was an array)
+                                if (prop.PropertyType == typeof(object))
                                 {
-                                    if (int.TryParse(valStr, out int intVal))
-                                        prop.SetValue(item, intVal);
-                                }
-                                else if (prop.PropertyType == typeof(double))
-                                {
-                                    if (double.TryParse(valStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double dblVal))
-                                        prop.SetValue(item, dblVal);
-                                }
-                                else if (prop.PropertyType == typeof(bool))
-                                {
-                                    prop.SetValue(item, valStr == "1" || valStr.ToLower() == "true");
+                                    prop.SetValue(item, finalValue);
                                 }
                                 else
-                                    prop.SetValue(item, Convert.ChangeType(valStr, prop.PropertyType));
-                            } catch (Exception ex) {
+                                {
+                                    string valStr = finalValue.ToString() ?? "";
+                                    if (prop.PropertyType == typeof(int) || prop.PropertyType == typeof(Int32))
+                                    {
+                                        if (int.TryParse(valStr, out int intVal))
+                                            prop.SetValue(item, intVal);
+                                    }
+                                    else if (prop.PropertyType == typeof(double))
+                                    {
+                                        if (double.TryParse(valStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double dblVal))
+                                            prop.SetValue(item, dblVal);
+                                    }
+                                    else if (prop.PropertyType == typeof(bool))
+                                    {
+                                        prop.SetValue(item, valStr == "1" || valStr.ToLower() == "true" || (finalValue is bool b && b));
+                                    }
+                                    else
+                                        prop.SetValue(item, Convert.ChangeType(valStr, prop.PropertyType));
+                                }
+                            } 
+                            catch (Exception ex) 
+                            {
                                 _logger.LogDebug("Error mapping field {Name}: {Msg}", name, ex.Message);
                             }
                         }
@@ -254,7 +317,9 @@ namespace Victoria.Infrastructure.Integration.Odoo
             if (fault != null) return null;
 
             var valueNode = doc.SelectSingleNode("//value/*");
-            return ParseValueNode(valueNode);
+            var result = ParseValueNode(valueNode);
+            _logger.LogInformation("[ODOO-DEBUG] ExecuteAction {Method} Result: {ResultType}", method, result?.GetType().Name ?? "null");
+            return result;
         }
 
         private string BuildExecuteKwXml(string model, string method, object[] ids, Dictionary<string, object>? values = null)
@@ -314,7 +379,7 @@ namespace Victoria.Infrastructure.Integration.Odoo
             if (value is double d) return $"<double>{d.ToString(System.Globalization.CultureInfo.InvariantCulture)}</double>";
             if (value is long l) return $"<int>{l}</int>";
             if (value is Dictionary<string, object> dict) return BuildStructXml(dict);
-            if (value is IEnumerable<object> list)
+            if (value is System.Collections.IEnumerable list && !(value is string))
             {
                 var sb = new StringBuilder("<array><data>");
                 foreach (var item in list)
@@ -357,6 +422,84 @@ namespace Victoria.Infrastructure.Integration.Odoo
                     }
                     return list;
                 default: return node.InnerText;
+            }
+        }
+
+        public async Task<T> ExecuteKwAsync<T>(string model, string method, object[] args, Dictionary<string, object>? kwargs = null)
+        {
+            var uid = await AuthenticateAsync();
+            if (uid <= 0) throw new Exception("Odoo Authentication failed");
+
+            // Build args array XML
+            var argsSb = new StringBuilder();
+            if (args != null)
+            {
+                foreach (var arg in args)
+                {
+                    argsSb.Append("<value>");
+                    argsSb.Append(BuildValueXml(arg));
+                    argsSb.Append("</value>");
+                }
+            }
+
+            // Build kwargs struct XML
+            var kwargsXml = "";
+            if (kwargs != null)
+            {
+                kwargsXml = BuildStructXml(kwargs);
+            }
+            else
+            {
+                kwargsXml = "<struct></struct>";
+            }
+
+            var xml = $@"<?xml version=""1.0""?>
+<methodCall>
+<methodName>execute_kw</methodName>
+<params>
+<param><value><string>{System.Security.SecurityElement.Escape(_db)}</string></value></param>
+<param><value><int>{uid}</int></value></param>
+<param><value><string>{System.Security.SecurityElement.Escape(_apiKey)}</string></value></param>
+<param><value><string>{model}</string></value></param>
+<param><value><string>{method}</string></value></param>
+<param><value><array><data>{argsSb}</data></array></value></param>
+<param><value>{kwargsXml}</value></param>
+</params>
+</methodCall>";
+
+            var response = await SendAsync("object", xml);
+            
+            // Parse response using existing helpers
+            // Note: ParseResponse is generic in some implementations, but here we might need to adapt.
+            // SearchAndReadAsync uses ParseResponse<List<T>>
+            // We need a generic parser.
+            
+            var doc = new XmlDocument();
+            doc.LoadXml(response);
+            var fault = doc.SelectSingleNode("//fault");
+            if (fault != null)
+            {
+                throw new Exception($"Odoo RPC Fault: {fault.OuterXml}");
+            }
+
+            var paramValue = doc.SelectSingleNode("//methodResponse/params/param/value/*");
+            if (paramValue == null) return default;
+
+            // This is a simplified parser mapping. 
+            // Since T is generic, we can rely on Newtonsoft or manual mapping if T is Dictionary.
+            var val = ParseValueNode(paramValue);
+            
+            if (val is T tVal) return tVal;
+            
+            // Try casting via JSON if direct cast fails (e.g. object to Dictionary)
+            try 
+            {
+                var json = System.Text.Json.JsonSerializer.Serialize(val);
+                return System.Text.Json.JsonSerializer.Deserialize<T>(json);
+            }
+            catch
+            {
+                return default;
             }
         }
 

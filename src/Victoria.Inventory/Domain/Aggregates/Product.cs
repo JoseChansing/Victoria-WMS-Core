@@ -11,10 +11,13 @@ namespace Victoria.Inventory.Domain.Aggregates
         public string Name { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
         public string Category { get; set; } = string.Empty;
+        public string Brand { get; set; } = string.Empty; // x_marca
+        public string Sides { get; set; } = string.Empty; // x_lados
         public PhysicalAttributes PhysicalAttributes { get; set; } = PhysicalAttributes.Empty();
         public string ImageSource { get; set; } = "null"; // variant, thumbnail, null
         public string Thumbnail { get; set; } = string.Empty; // Base64
         public int OdooId { get; set; }
+        public bool HasImage { get; set; }
         public bool IsArchived { get; set; }
         public DateTime LastUpdated { get; set; } = DateTime.UtcNow;
     }

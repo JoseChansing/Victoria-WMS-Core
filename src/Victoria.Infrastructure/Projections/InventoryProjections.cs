@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Marten.Events.Projections;
+using Marten.Events.Aggregation;
 using Victoria.Inventory.Domain.Events;
 
 namespace Victoria.Infrastructure.Projections
@@ -22,6 +23,8 @@ namespace Victoria.Infrastructure.Projections
         public InventoryByItemProjection()
         {
             Identity<InventoryImportedFromOdoo>(e => e.Sku);
+            Identity<LpnCreated>(e => e.Sku);
+            Identity<LpnAllocated>(e => e.Sku);
         }
 
         public void Apply(InventoryImportedFromOdoo e, InventoryItemView view)
@@ -31,8 +34,17 @@ namespace Victoria.Infrastructure.Projections
             view.Description = e.Description;
             view.LpnQuantities[e.LpnId] = e.Quantity;
             view.TotalQuantity = view.LpnQuantities.Values.Sum();
-            view.LastUpdated = e.ImportDate;
-            view.PrimaryLocation = e.TargetLocation; // Simplified for now
+            view.LastUpdated = e.OccurredOn;
+            view.PrimaryLocation = e.TargetLocation; 
+        }
+
+        public void Apply(LpnCreated e, InventoryItemView view)
+        {
+            view.Sku = e.Sku;
+            view.Id = e.Sku;
+            view.LpnQuantities[e.LpnId] = e.Quantity;
+            view.TotalQuantity = view.LpnQuantities.Values.Sum();
+            view.LastUpdated = e.OccurredOn;
         }
     }
 
@@ -61,6 +73,7 @@ namespace Victoria.Infrastructure.Projections
         {
             Identity<InventoryImportedFromOdoo>(e => e.TargetLocation);
             Identity<LpnLocationChanged>(e => e.NewLocation);
+            Identity<LpnCreated>(e => "DOCK-UNITS"); // Default
         }
 
         public void Apply(InventoryImportedFromOdoo e, LocationInventoryView view)
@@ -89,7 +102,101 @@ namespace Victoria.Infrastructure.Projections
 
         public void Apply(LpnLocationChanged e, LocationInventoryView view)
         {
-             // Phase 3 implementation
+            view.Id = e.NewLocation;
+        }
+    }
+
+    public class LpnDetailView
+    {
+        public string Id { get; set; }
+        public string Sku { get; set; }
+        public int Quantity { get; set; }
+        public string Location { get; set; }
+        public string Status { get; set; }
+        public DateTimeOffset LastUpdated { get; set; }
+    }
+
+    public class LpnDetailProjection : SingleStreamProjection<LpnDetailView>
+    {
+        public void Apply(InventoryImportedFromOdoo e, LpnDetailView view)
+        {
+            view.Id = e.LpnId;
+            view.Sku = e.Sku;
+            view.Quantity += e.Quantity;
+            view.Location = e.TargetLocation;
+            view.Status = "Putaway";
+            view.LastUpdated = e.OccurredOn;
+        }
+
+        public void Apply(LpnCreated e, LpnDetailView view)
+        {
+            view.Id = e.LpnId;
+            view.Sku = e.Sku;
+            view.Quantity = e.Quantity;
+            view.Status = "Created";
+            view.LastUpdated = e.OccurredOn;
+        }
+
+        public void Apply(LpnLocationChanged e, LpnDetailView view)
+        {
+            view.Location = e.NewLocation;
+            view.LastUpdated = e.OccurredOn;
+        }
+
+        public void Apply(InventoryAdjusted e, LpnDetailView view)
+        {
+            view.Quantity = e.NewQuantity;
+            view.LastUpdated = e.OccurredOn;
+        }
+    }
+
+    public class LpnHistoryEntry
+    {
+        public string EventType { get; set; }
+        public string Description { get; set; }
+        public string User { get; set; }
+        public DateTimeOffset Timestamp { get; set; }
+    }
+
+    public class LpnHistoryView
+    {
+        public string Id { get; set; }
+        public List<LpnHistoryEntry> Entries { get; set; } = new();
+    }
+
+    public class LpnHistoryProjection : SingleStreamProjection<LpnHistoryView>
+    {
+        public void Apply(InventoryImportedFromOdoo e, LpnHistoryView view)
+        {
+            view.Entries.Add(new LpnHistoryEntry 
+            { 
+                EventType = "IMPORT", 
+                Description = $"Imported from Odoo Quant {e.OdooQuantId} to {e.TargetLocation}", 
+                User = e.User, 
+                Timestamp = e.OccurredOn 
+            });
+        }
+
+        public void Apply(LpnCreated e, LpnHistoryView view)
+        {
+            view.Entries.Add(new LpnHistoryEntry 
+            { 
+                EventType = "CREATED", 
+                Description = $"LPN Created with {e.Quantity} units of {e.Sku}", 
+                User = e.CreatedBy, 
+                Timestamp = e.OccurredOn 
+            });
+        }
+
+        public void Apply(LpnLocationChanged e, LpnHistoryView view)
+        {
+            view.Entries.Add(new LpnHistoryEntry 
+            { 
+                EventType = "MOVE", 
+                Description = $"Moved from {e.OldLocation} to {e.NewLocation}", 
+                User = e.CreatedBy, 
+                Timestamp = e.OccurredOn 
+            });
         }
     }
 }

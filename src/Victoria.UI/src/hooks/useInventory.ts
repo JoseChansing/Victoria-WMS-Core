@@ -11,13 +11,25 @@ export interface LpnItem {
     tenantId: string;
 }
 
+export interface LpnHistoryEntry {
+    eventType: string;
+    description: string;
+    user: string;
+    timestamp: string;
+}
+
+export interface LpnHistory {
+    id: string;
+    entries: LpnHistoryEntry[];
+}
+
 export const useInventory = () => {
     const queryClient = useQueryClient();
 
     const inventoryQuery = useQuery({
         queryKey: ['inventory'],
         queryFn: async () => {
-            const { data } = await api.get<LpnItem[]>('/inventory');
+            const { data } = await api.get<LpnItem[]>('/inventory/lpns');
             return data;
         }
     });
@@ -42,4 +54,16 @@ export const useInventory = () => {
         isLoading: inventoryQuery.isLoading,
         approveAdjustment
     };
+};
+
+export const useLpnHistory = (lpnId: string | null) => {
+    return useQuery({
+        queryKey: ['lpn-history', lpnId],
+        queryFn: async () => {
+            if (!lpnId) return null;
+            const { data } = await api.get<LpnHistory>(`/inventory/lpns/${lpnId}/history`);
+            return data;
+        },
+        enabled: !!lpnId
+    });
 };

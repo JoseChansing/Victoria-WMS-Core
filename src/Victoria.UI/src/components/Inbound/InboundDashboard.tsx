@@ -91,7 +91,7 @@ const InboundDashboard: React.FC = () => {
             <div className="flex h-[80vh] items-center justify-center">
                 <div className="flex flex-col items-center gap-4">
                     <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
-                    <p className="text-slate-500 font-medium">Cargando panel de gestión...</p>
+                    <p className="text-slate-500 font-medium">Loading management dashboard...</p>
                 </div>
             </div>
         );
@@ -102,8 +102,8 @@ const InboundDashboard: React.FC = () => {
             {/* Header & Stats */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-white tracking-tight">Panel de Recepciones</h1>
-                    <p className="text-slate-400 text-sm">Monitoreo y cierre de órdenes de entrada</p>
+                    <h1 className="text-2xl font-bold text-white tracking-tight">Inbound Dashboard</h1>
+                    <p className="text-slate-400 text-sm">Monitoring and closing inbound orders</p>
                 </div>
 
                 <div className="flex gap-4">
@@ -112,7 +112,7 @@ const InboundDashboard: React.FC = () => {
                             <Clock className="w-5 h-5 text-blue-300" />
                         </div>
                         <div>
-                            <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Abiertas</p>
+                            <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Open</p>
                             <p className="text-xl font-bold text-white">{kpis?.pendingOrders ?? 0}</p>
                         </div>
                     </div>
@@ -121,7 +121,7 @@ const InboundDashboard: React.FC = () => {
                             <CheckSquare className="w-5 h-5 text-emerald-400" />
                         </div>
                         <div>
-                            <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Hoy</p>
+                            <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Today</p>
                             <p className="text-xl font-bold text-white">12</p>
                         </div>
                     </div>
@@ -133,7 +133,7 @@ const InboundDashboard: React.FC = () => {
                 <div className="bg-emerald-900/20 border border-emerald-500/30 text-emerald-400 px-4 py-3 rounded-xl flex items-center gap-3 animate-in slide-in-from-top-4">
                     <CheckCircle2 className="w-5 h-5" />
                     <p className="font-medium text-sm">
-                        Orden <strong>{lastClosedOrder}</strong> cerrada. Inventario transferido a STAGE-RESERVE y STAGE-PICKING.
+                        Order <strong>{lastClosedOrder}</strong> closed. Inventory transferred to STAGE-RESERVE and STAGE-PICKING.
                     </p>
                 </div>
             )}
@@ -144,7 +144,7 @@ const InboundDashboard: React.FC = () => {
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                     <input
                         type="text"
-                        placeholder="Buscar por PO # o Proveedor..."
+                        placeholder="Search by PO # or Supplier..."
                         className="w-full pl-11 pr-4 py-2.5 bg-corp-base/50 border border-corp-secondary/50 rounded-2xl text-sm text-white focus:ring-2 focus:ring-corp-accent transition-all placeholder:text-slate-600"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
@@ -156,25 +156,25 @@ const InboundDashboard: React.FC = () => {
                         onClick={() => setStatusFilter('All')}
                         className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${statusFilter === 'All' ? 'bg-corp-accent text-white shadow-md' : 'text-slate-500 hover:text-slate-300'}`}
                     >
-                        Todos
+                        All
                     </button>
                     <button
                         onClick={() => setStatusFilter('Pending')}
                         className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${statusFilter === 'Pending' ? 'bg-corp-accent text-white shadow-md' : 'text-slate-500 hover:text-slate-300'}`}
                     >
-                        Pendientes
+                        Pending
                     </button>
                     <button
                         onClick={() => setStatusFilter('In Progress')}
                         className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${statusFilter === 'In Progress' ? 'bg-corp-accent text-white shadow-md' : 'text-slate-500 hover:text-slate-300'}`}
                     >
-                        Recibiendo
+                        Receiving
                     </button>
                     <button
                         onClick={() => setStatusFilter('Completed')}
                         className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${statusFilter === 'Completed' ? 'bg-corp-accent text-white shadow-md' : 'text-slate-500 hover:text-slate-300'}`}
                     >
-                        Cerradas
+                        Closed
                     </button>
                 </div>
 
@@ -204,12 +204,12 @@ const InboundDashboard: React.FC = () => {
                     <table className="w-full text-left">
                         <thead>
                             <tr className="bg-corp-accent/10 border-b border-corp-secondary/50">
-                                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Referencia PO</th>
-                                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Partner / Proveedor</th>
-                                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Fecha</th>
-                                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400 text-center">Progreso</th>
-                                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Estado</th>
-                                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400 text-right">Acciones</th>
+                                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">PO Reference</th>
+                                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Partner / Supplier</th>
+                                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Date</th>
+                                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400 text-center">Progress</th>
+                                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Status</th>
+                                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400 text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-corp-secondary/30">
@@ -250,9 +250,9 @@ const InboundDashboard: React.FC = () => {
                                         </td>
                                         <td className="px-6 py-4">
                                             <span className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-tight border ${getStatusColor(order.status)}`}>
-                                                {order.status === 'In Progress' ? 'Recibiendo' :
-                                                    order.status === 'Completed' ? 'Cerrada' :
-                                                        order.status === 'Pending' ? 'Pendiente' : order.status}
+                                                {order.status === 'In Progress' ? 'Receiving' :
+                                                    order.status === 'Completed' ? 'Closed' :
+                                                        order.status === 'Pending' ? 'Pending' : order.status}
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 text-right">
@@ -262,7 +262,7 @@ const InboundDashboard: React.FC = () => {
                                                         onClick={() => handleCloseOrderRequest(order)}
                                                         disabled={isClosing}
                                                         className="p-2 text-slate-400 hover:text-emerald-400 hover:bg-emerald-900/40 rounded-xl transition-all disabled:opacity-50 border border-transparent hover:border-emerald-800/50"
-                                                        title="Finalizar Recepción"
+                                                        title="Finalize Receipt"
                                                     >
                                                         {isClosing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Lock className="w-5 h-5" />}
                                                     </button>
@@ -274,7 +274,7 @@ const InboundDashboard: React.FC = () => {
                                                         navigate(`/inbound/receive/${mode}/${order.id}`);
                                                     }}
                                                     className="p-2 text-slate-400 hover:text-white hover:bg-corp-accent/40 rounded-xl transition-all border border-transparent hover:border-corp-secondary/50"
-                                                    title="Continuar Recepción"
+                                                    title="Continue Receipt"
                                                 >
                                                     <ChevronRight className="w-5 h-5" />
                                                 </button>
@@ -289,7 +289,7 @@ const InboundDashboard: React.FC = () => {
                                             <div className="p-4 bg-slate-50 rounded-2xl">
                                                 <AlertCircle className="w-8 h-8 text-slate-300" />
                                             </div>
-                                            <p className="text-slate-500 font-medium">No se encontraron órdenes con esos criterios</p>
+                                            <p className="text-slate-500 font-medium">No orders found matching criteria</p>
                                         </div>
                                     </td>
                                 </tr>
@@ -301,7 +301,7 @@ const InboundDashboard: React.FC = () => {
                 {/* Pagination */}
                 <div className="px-6 py-4 bg-corp-base/30 border-t border-corp-secondary/50 flex items-center justify-between">
                     <p className="text-xs font-medium text-slate-400">
-                        Mostrando <span className="text-white">{Math.min(filteredOrders.length, itemsPerPage)}</span> de <span className="text-white">{filteredOrders.length}</span> resultados
+                        Showing <span className="text-white">{Math.min(filteredOrders.length, itemsPerPage)}</span> of <span className="text-white">{filteredOrders.length}</span> results
                     </p>
                     <div className="flex items-center gap-2">
                         <button
@@ -312,7 +312,7 @@ const InboundDashboard: React.FC = () => {
                             <ChevronLeft className="w-4 h-4" />
                         </button>
                         <span className="text-xs font-bold text-slate-300">
-                            Página {currentPage} de {totalPages || 1}
+                            Page {currentPage} of {totalPages || 1}
                         </span>
                         <button
                             onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
@@ -334,7 +334,7 @@ const InboundDashboard: React.FC = () => {
                                     <Lock className="w-6 h-6 text-emerald-400" />
                                 </div>
                                 <div>
-                                    <h3 className="text-xl font-bold text-white">Cerrar Orden</h3>
+                                    <h3 className="text-xl font-bold text-white">Close Order</h3>
                                     <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">{confirmingOrder.orderNumber}</p>
                                 </div>
                             </div>
@@ -350,7 +350,7 @@ const InboundDashboard: React.FC = () => {
                                         <>
                                             <div className="bg-corp-base/50 p-6 rounded-3xl border border-corp-secondary/30 space-y-4">
                                                 <div className="flex justify-between items-center text-xs font-bold uppercase tracking-widest">
-                                                    <span className="text-slate-500">Recibido</span>
+                                                    <span className="text-slate-500">Received</span>
                                                     <span className={isComplete ? 'text-emerald-400' : 'text-amber-400'}>{received} / {total}</span>
                                                 </div>
                                                 <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
@@ -360,15 +360,15 @@ const InboundDashboard: React.FC = () => {
 
                                             {isComplete ? (
                                                 <p className="text-sm text-slate-300 leading-relaxed text-center px-4">
-                                                    La orden se encuentra <strong>completa</strong>. Al continuar se sincronizará con Odoo y se marcará como terminada.
+                                                    The order is <strong>complete</strong>. Continuing will sync with Odoo and mark it as finished.
                                                 </p>
                                             ) : (
                                                 <div className="bg-amber-900/20 border border-amber-500/20 p-5 rounded-2xl flex gap-4">
                                                     <AlertCircle className="w-6 h-6 text-amber-500 shrink-0" />
                                                     <div className="space-y-1">
-                                                        <p className="text-sm font-bold text-amber-400 uppercase tracking-tight">Cierre Parcial Detectado</p>
+                                                        <p className="text-sm font-bold text-amber-400 uppercase tracking-tight">Partial Completion Detected</p>
                                                         <p className="text-[11px] text-amber-200/60 leading-relaxed font-medium">
-                                                            Faltan <strong>{diff}</strong> unidades por recibir. Odoo generará un <strong>Backorder</strong> automáticamente para los productos pendientes.
+                                                            <strong>{diff}</strong> units remaining. Odoo will automatically generate a <strong>Backorder</strong> for pending products.
                                                         </p>
                                                     </div>
                                                 </div>
@@ -383,13 +383,13 @@ const InboundDashboard: React.FC = () => {
                                     onClick={() => setConfirmingOrder(null)}
                                     className="px-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] bg-corp-base/60 text-slate-500 border border-corp-secondary/50 hover:bg-slate-800 transition-all active:scale-95"
                                 >
-                                    Cancelar
+                                    Cancel
                                 </button>
                                 <button
                                     onClick={handleFinalizeClose}
                                     className="px-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] bg-emerald-600 text-white shadow-xl shadow-emerald-900/20 hover:bg-emerald-500 transition-all active:scale-95 border border-emerald-400/20"
                                 >
-                                    Confirmar Cierre
+                                    Confirm Close
                                 </button>
                             </div>
                         </div>
