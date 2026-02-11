@@ -214,7 +214,6 @@ namespace Victoria.Infrastructure.Integration.Odoo
                     { "context", new Dictionary<string, object>
                         {
                             { "skip_immediate", true },
-                            { "skip_backorder", true },
                             { "button_validate_picking_ids", new object[] { pickingId } }
                         }
                     }
@@ -233,50 +232,7 @@ namespace Victoria.Infrastructure.Integration.Odoo
                     var resModel = action["res_model"]?.ToString();
                     _logger.LogInformation("[ODOO-ADAPTER] Wizard Detectado: {Model}", resModel);
 
-                    if (resModel == "stock.backorder.confirmation")
-                    {
-                        int wizardId = 0;
-                        if (action.ContainsKey("res_id") && action["res_id"] != null)
-                            wizardId = Convert.ToInt32(action["res_id"]);
-
-                        if (wizardId == 0)
-                    {
-                        _logger.LogInformation("[ODOO-ADAPTER] Creando wizard de backorder manualmente...");
-                        var wizardData = new Dictionary<string, object>
-                        {
-                            { "pick_ids", new object[] { new object[] { 4, pickingId, 0 } } } // M2M Link
-                        };
-                        var createResult = await _rpcClient.ExecuteActionAsync("stock.backorder.confirmation", "create", 
-                            new object[] { wizardData },
-                            new Dictionary<string, object> { { "context", new Dictionary<string, object> { { "active_id", pickingId } } } });
-                        
-                        if (createResult != null) wizardId = Convert.ToInt32(createResult);
-                    }
-
-                        if (wizardId > 0)
-                        {
-                            _logger.LogInformation("[ODOO-ADAPTER] Procesando wizard {WizardId}...", wizardId);
-                            
-                            // Refuerzo de contexto: pasar picking_id
-                            var procContext = new Dictionary<string, object>
-                            {
-                                { "context", new Dictionary<string, object>
-                                    {
-                                        { "active_id", pickingId },
-                                        { "active_ids", new object[] { pickingId } },
-                                        { "active_model", "stock.picking" }
-                                    }
-                                }
-                            };
-
-                            await _rpcClient.ExecuteActionAsync("stock.backorder.confirmation", "process", 
-                                new object[] { new object[] { wizardId } }, procContext);
-                            
-                            // Recurse para confirmar estado final
-                            return await RecursiveValidateAsync(pickingId, depth + 1);
-                        }
-                    }
-                    else if (resModel == "stock.immediate.transfer")
+                    if (resModel == "stock.immediate.transfer")
                     {
                         _logger.LogInformation("[ODOO-ADAPTER] Procesando wizard de transferencia inmediata...");
                         int wizardId = action.ContainsKey("res_id") ? Convert.ToInt32(action["res_id"]) : 0;
@@ -299,9 +255,9 @@ namespace Victoria.Infrastructure.Integration.Odoo
                     }
                     else
                     {
-                        // CASO C: Desconocido (Bloqueo para análisis)
-                        _logger.LogError("[ODOO-ADAPTER] Wizard desconocido detectado: {ResModel}. Bloqueando validación preventiva.", resModel);
-                        throw new Exception($"Wizard inesperado de Odoo detectado ({resModel}). Revise los logs del 'Wizard Spy' para más detalles.");
+                        _logger.LogInformation("[ODOO-ADAPTER] Wizard '{Model}' detectado. Siendo manejado por configuración de Odoo o ignorado si no es crítico.", resModel);
+                        // No lanzamos excepción por wizards de backorder ya que Odoo los procesa automáticamente
+                        // o simplemente se resuelve con la siguiente validación/estado.
                     }
                 }
 

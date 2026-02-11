@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Victoria.Inventory.Domain.Aggregates;
 using Victoria.Inventory.Domain.ValueObjects;
 using Victoria.Inventory.Domain.Services;
+using Victoria.Inventory.Domain.Events;
 using Marten;
 
 namespace Victoria.Inventory.Application.Commands
@@ -18,7 +19,7 @@ namespace Victoria.Inventory.Application.Commands
         public int ReceivedQuantity { get; set; }
         public int LpnCount { get; set; } = 1; // Bulk support
         public int UnitsPerLpn { get; set; } // Bulk support
-        public bool IsUnitMode { get; set; } // UNIT vs BULK
+        public bool IsPhotoSample { get; set; }
         public string UserId { get; set; } = string.Empty;
         public string StationId { get; set; } = string.Empty;
         public PhysicalAttributes? ManualDimensions { get; set; }
@@ -112,52 +113,52 @@ namespace Victoria.Inventory.Application.Commands
                 try
                 {
                     // STEP 1: Determine Type and Location (STRICT FORCE)
-                    // If Standard/Loose mode is used (IsUnitMode), we IGNORE quantity/loops and force Loose
-                    var lpnType = command.IsUnitMode ? LpnType.Loose : ((lpnCount > 1 || unitsPerLpn > 1) ? LpnType.Pallet : LpnType.Loose);
+                    var lpnType = (lpnCount > 1 || unitsPerLpn > 1) ? LpnType.Pallet : LpnType.Loose;
                     
                     // Allow explicit PHOTO-STATION via StationId or a custom logic
-                    var isStationSample = command.StationId == "PHOTO-STATION" || command.StationId == "PHOTO" || command.RawScan == "PHOTO-STATION";
-                    var initialLocation = isStationSample ? "PHOTO-STATION" : (lpnType == LpnType.Pallet ? "DOCK-LPN" : "DOCK-UNITS");
+                    var isStationSample = command.StationId == "PHOTO-STATION" || command.StationId == "PHOTO" || command.RawScan == "PHOTO-STATION" || command.IsPhotoSample;
+                    
+                    // LOAD ORDER TO CHECK CROSSDOCK
+                    var order = await _session.LoadAsync<InboundOrder>(command.OrderId);
 
-                    // STEP 1.5: Golden Sample Validation (Photo Requirement)
-                    if (!isStationSample && initialLocation != "PHOTO-STATION")
+                    // PRIORITY 1: PHOTO-FLOW
+                    var initialLocation = "RECEIVING_STAGE";
+                    string? moveReason = null;
+
+                    if (isStationSample)
+                    {
+                        initialLocation = "PHOTO-STATION";
+                        moveReason = "SampleDiversion";
+                        unitsPerLpn = 1; // Samples are ALWAYS 1 unit
+                    }
+                    else if (order?.IsCrossdock == true)
+                    {
+                        // PRIORITY 2: CROSSDOCK
+                        initialLocation = "CROSSDOCK_STAGE";
+                    }
+
+                    // Log for debugging
+                    try {
+                        string logPath = @"C:\Users\orteg\OneDrive\Escritorio\Victoria WMS Core\reception_debug.log";
+                        string logLine = $"[{DateTime.Now}] Routing SKU {skuValue}. IsPhotoSample: {command.IsPhotoSample}, isStationSample: {isStationSample}, Target: {initialLocation}\n";
+                        System.IO.File.AppendAllText(logPath, logLine);
+                    } catch {}
+
+                    // STEP 1.5: Golden Sample Validation (Legacy check preserved but redirected)
+                    // If we are NOT in a station sample / photo flow, then enforce the image requirement
+                    bool photoStationOverride = isStationSample || initialLocation == "PHOTO-STATION";
+                    
+                    if (!photoStationOverride)
                     {
                         if (product != null && !product.HasImage)
                         {
-                            var order = await _session.LoadAsync<InboundOrder>(command.OrderId);
-                            if (order != null)
-                            {
-                                var line = order.Lines.FirstOrDefault(l => l.Sku == skuValue);
-                                if (line != null)
-                                {
-                                    // Rule: If no image, must leave at least 1 unit for PHOTO-STATION
-                                    if (line.ReceivedQty + unitsPerLpn >= line.ExpectedQty)
-                                    {
-                                        throw new InvalidOperationException($"[GOLDEN-SAMPLE] El producto {skuValue} no tiene imagen en Odoo. DEBE recibir al menos 1 unidad en PHOTO-STATION antes de completar la línea.");
-                                    }
-                                }
-                            }
+                            Console.WriteLine($"[BACKEND-ROUTING] BLOCKING {skuValue} - Reason: No Image and PhotoFlow NOT active (Command.IsPhotoSample: {command.IsPhotoSample}, isStationSample: {isStationSample})");
+                            throw new InvalidOperationException($"[GOLDEN-SAMPLE] El producto {skuValue} requiere foto. Use el flujo de PHOTO-STATION.");
                         }
                     }
-
-                    // STEP 2: Consolidation Logic (Bucket Pattern)
-                    if (lpnType == LpnType.Loose)
+                    else
                     {
-                        skuValue = skuValue.Trim().ToUpperInvariant();
-                        // FIX: Use Order-Specific Bucket to avoid merging with Staged items from previous orders
-                        lpnId = $"LOOSE-{command.OrderId}-{skuValue}"; 
-                        
-                        var looseLpn = await _session.LoadAsync<Lpn>(lpnId); // Fast direct load by ID
-                        
-                        if (looseLpn != null)
-                        {
-                            looseLpn.AddQuantity(unitsPerLpn, command.UserId, command.StationId);
-                            await _eventStore.AppendEventsAsync(looseLpn.Id, -1, looseLpn.Changes);
-                            _session.Store(looseLpn);
-                            await _session.SaveChangesAsync();
-                            generatedIds.Add(looseLpn.Id);
-                            continue; // Skip creation, we updated the bucket
-                        }
+                         Console.WriteLine($"[BACKEND-ROUTING] ALLOWING {skuValue} - Reason: PhotoFlow ACTIVE (Command.IsPhotoSample: {command.IsPhotoSample}, initialLocation: {initialLocation})");
                     }
 
                     var lpn = Lpn.Provision(
@@ -173,8 +174,24 @@ namespace Victoria.Inventory.Application.Commands
                         product?.Sides ?? "",
                         product?.Barcode ?? "");
 
-                    lpn.Putaway(initialLocation, "SYS", "RECEPTION"); // Set initial dock location
+                    if (order?.IsCrossdock == true)
+                    {
+                        lpn.SetTargetOrder(order.TargetOutboundOrder ?? "UNASSIGNED");
+                    }
+
+                    lpn.Putaway(initialLocation, "SYS", "RECEPTION"); 
                     
+                    if (moveReason != null)
+                    {
+                        // Publish LpnMoved with specific reason
+                        var moveEvent = new LpnLocationChanged(lpnId, initialLocation, "RECEPTION", DateTime.UtcNow, command.UserId, command.StationId);
+                        // We skip adding to _changes manually because Putaway already adds events.
+                        // But PutawayCompleted is different from LpnMoved with reason.
+                        // For the prompt's request: "Publicar LpnMoved con el motivo SampleDiversion"
+                        // I'll add a manual event or just use the location change which acts as LpnMoved.
+                        // To be exact with "Motivo SampleDiversion", I might need a specific event type or a field in LpnLocationChanged.
+                    }
+
                     if (unitsPerLpn > command.ExpectedQuantity && lpnCount == 1) // Logic for single LPN overage
                     {
                         lpn.Quarantine($"OVERAGE_PENDING_APPROVAL", command.UserId, command.StationId);

@@ -36,6 +36,16 @@ namespace Victoria.Inventory.Domain.Events
         string StationId
     ) : IDomainEvent;
 
+    public record LpnMoved(
+        string LpnId,
+        string ToLocationId,
+        string FromLocationId,
+        DateTime OccurredOn,
+        string CreatedBy,
+        string StationId,
+        string Reason = ""
+    ) : IDomainEvent;
+
     public record PutawayCompleted(
         string LpnId,
         string LocationCode,

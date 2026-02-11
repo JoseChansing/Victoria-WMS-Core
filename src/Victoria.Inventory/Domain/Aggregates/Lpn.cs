@@ -25,6 +25,7 @@ namespace Victoria.Inventory.Domain.Aggregates
         [JsonProperty] public LpnStatus Status { get; private set; }
         [JsonProperty] public string? CurrentLocationId { get; private set; }
         [JsonProperty] public string? SelectedOrderId { get; private set; }
+        [JsonProperty] public string? TargetOutboundOrder { get; private set; }
         [JsonProperty] public string? ParentLpnId { get; private set; }
         [JsonProperty] public string Brand { get; private set; } = "";
         [JsonProperty] public string Sides { get; private set; } = "";
@@ -35,7 +36,7 @@ namespace Victoria.Inventory.Domain.Aggregates
         public IReadOnlyCollection<IDomainEvent> Changes => _changes.AsReadOnly();
 
         [JsonConstructor]
-        private Lpn(string id, LpnCode code, Sku sku, LpnType type, int quantity, PhysicalAttributes physicalAttributes, LpnStatus status, string? currentLocationId, string? selectedOrderId, string? parentLpnId, DateTime createdAt, string brand, string sides, string productBarcode)
+        private Lpn(string id, LpnCode code, Sku sku, LpnType type, int quantity, PhysicalAttributes physicalAttributes, LpnStatus status, string? currentLocationId, string? selectedOrderId, string? targetOutboundOrder, string? parentLpnId, DateTime createdAt, string brand, string sides, string productBarcode)
         {
             Id = id;
             Code = code;
@@ -46,6 +47,7 @@ namespace Victoria.Inventory.Domain.Aggregates
             Status = status;
             CurrentLocationId = currentLocationId;
             SelectedOrderId = selectedOrderId;
+            TargetOutboundOrder = targetOutboundOrder;
             ParentLpnId = parentLpnId;
             CreatedAt = createdAt;
             Brand = brand;
@@ -188,6 +190,11 @@ namespace Victoria.Inventory.Domain.Aggregates
         {
             Status = LpnStatus.Received;
             SelectedOrderId = e.OrderId;
+        }
+
+        public void SetTargetOrder(string targetOrder)
+        {
+            TargetOutboundOrder = targetOrder;
         }
 
         public void Apply(LpnLocationChanged e)

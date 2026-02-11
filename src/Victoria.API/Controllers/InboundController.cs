@@ -12,6 +12,8 @@ using Victoria.Core.Interfaces;
 using Victoria.Core.Models;
 using Victoria.Infrastructure.Integration.Odoo;
 using Microsoft.Extensions.Logging;
+using System.Text.Json.Serialization;
+using System.IO;
 
 namespace Victoria.API.Controllers
 {
@@ -69,11 +71,22 @@ namespace Victoria.API.Controllers
         }
 
         [HttpGet("orders")]
-        public async Task<IActionResult> GetOrders()
+        public async Task<IActionResult> GetOrders([FromQuery] string? mode)
         {
             try
             {
-                var orders = await _session.Query<InboundOrder>()
+                IQueryable<InboundOrder> query = _session.Query<InboundOrder>();
+                
+                if (mode == "crossdock")
+                {
+                    query = query.Where(x => x.IsCrossdock);
+                }
+                else if (mode == "standard")
+                {
+                    query = query.Where(x => !x.IsCrossdock);
+                }
+
+                var orders = await query
                     .OrderByDescending(x => x.Date)
                     .ToListAsync();
 
@@ -89,6 +102,8 @@ namespace Victoria.API.Controllers
                     o.Status,
                     o.Date,
                     o.TotalUnits,
+                    o.IsCrossdock,
+                    o.TargetOutboundOrder,
                     Lines = o.Lines.Select(l => new {
                         l.Sku,
                         // e CRITICAL FIX: Use current product name from master, fallback to stored name
@@ -116,46 +131,88 @@ namespace Victoria.API.Controllers
             }
         }
 
+        [HttpPatch("orders/{id}")]
+        public async Task<IActionResult> PatchOrder(string id, [FromBody] PatchInboundOrderRequest request)
+        {
+            try
+            {
+                var order = await _session.LoadAsync<InboundOrder>(id);
+                if (order == null) return NotFound("Order not found");
+
+                if (request.IsCrossdock.HasValue) order.IsCrossdock = request.IsCrossdock.Value;
+                if (request.TargetOutboundOrder != null) order.TargetOutboundOrder = request.TargetOutboundOrder;
+
+                _session.Store(order);
+                await _session.SaveChangesAsync();
+
+                return Ok(order);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[API-ERROR] PatchOrder failed for order {OrderId}", id);
+                return BadRequest(new { error = ex.Message });
+            }
+        }
+
+        public class PatchInboundOrderRequest
+        {
+            public bool? IsCrossdock { get; set; }
+            public string? TargetOutboundOrder { get; set; }
+        }
 
         [HttpPost("receive")]
         public async Task<IActionResult> Receive([FromBody] ReceiveRequest request)
         {
-            var order = await _session.LoadAsync<InboundOrder>(request.OrderId);
-            if (order == null) return NotFound("Order not found");
-
-            // Build Command for the Handler
-            var command = new ReceiveLpnCommand
+            try
             {
-                OrderId = request.OrderId,
-                LpnId = request.LpnId,
-                RawScan = request.RawScan,
-                Sku = request.Sku,
-                ReceivedQuantity = request.Quantity,
-                ExpectedQuantity = request.ExpectedQuantity > 0 ? request.ExpectedQuantity : request.Quantity,
-                LpnCount = request.LpnCount,
-                UnitsPerLpn = request.UnitsPerLpn,
-                IsUnitMode = request.IsUnitMode, // PATCH FINAL: Activación de modo suelto
-                UserId = "System", // TODO: Get from Auth
-                StationId = "STATION-01", // TODO: Get from station context
-                ManualDimensions = (request.Weight.HasValue || request.Length.HasValue || request.Width.HasValue || request.Height.HasValue)
-                    ? PhysicalAttributes.Create(request.Weight ?? 0, request.Length ?? 0, request.Width ?? 0, request.Height ?? 0)
-                    : null
-            };
+                var order = await _session.LoadAsync<InboundOrder>(request.OrderId);
+                if (order == null) return NotFound("Order not found");
 
-            // Execute logic via Handler
-            var generatedIds = await _handler.Handle(command);
+                // Build Command for the Handler
+                var command = new ReceiveLpnCommand
+                {
+                    OrderId = request.OrderId,
+                    LpnId = request.LpnId,
+                    RawScan = request.RawScan,
+                    Sku = request.Sku,
+                    ReceivedQuantity = request.Quantity,
+                    ExpectedQuantity = request.ExpectedQuantity > 0 ? request.ExpectedQuantity : request.Quantity,
+                    LpnCount = request.LpnCount,
+                    UnitsPerLpn = request.UnitsPerLpn,
+                    IsPhotoSample = request.IsPhotoSample,
+                    UserId = "System", // TODO: Get from Auth
+                    StationId = request.IsPhotoSample ? "PHOTO-STATION" : "STATION-01", 
+                    ManualDimensions = (request.Weight.HasValue || request.Length.HasValue || request.Width.HasValue || request.Height.HasValue)
+                        ? PhysicalAttributes.Create(request.Weight ?? 0, request.Length ?? 0, request.Width ?? 0, request.Height ?? 0)
+                        : null
+                };
 
-            // 3. Update Order Line
-            var skuToUpdate = request.Sku ?? request.RawScan;
-            var line = order.Lines.FirstOrDefault(l => l.Sku == skuToUpdate);
-            if (line != null)
-            {
-                line.ReceivedQty += request.Quantity;
-                _session.Store(order);
-                await _session.SaveChangesAsync();
+                // Execute logic via Handler
+                string logPath = Path.Combine(Directory.GetCurrentDirectory(), "reception_debug.log");
+                string logLine = $"[{DateTime.Now}] Receiving {request.Sku ?? request.RawScan}. IsPhotoSample: {request.IsPhotoSample}, Station: {command.StationId}\n";
+                await System.IO.File.AppendAllTextAsync(logPath, logLine);
+                
+                _logger.LogInformation($"[INBOUND-API] Received request for {request.Sku ?? request.RawScan}. IsPhotoSample: {request.IsPhotoSample}");
+                
+                var generatedIds = await _handler.Handle(command);
+
+                // 3. Update Order Line
+                var skuToUpdate = request.Sku ?? request.RawScan;
+                var line = order.Lines.FirstOrDefault(l => l.Sku == skuToUpdate);
+                if (line != null)
+                {
+                    line.ReceivedQty += request.Quantity;
+                    _session.Store(order);
+                    await _session.SaveChangesAsync();
+                }
+
+                return Ok(new { LpnIds = generatedIds, Count = generatedIds.Count });
             }
-
-            return Ok(new { LpnIds = generatedIds, Count = generatedIds.Count });
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[API-ERROR] Receive failed for order {OrderId}", request.OrderId);
+                return BadRequest(new { error = ex.Message });
+            }
         }
 
         [HttpPost("reset/{orderId}")]
@@ -382,6 +439,7 @@ namespace Victoria.API.Controllers
         public double? Length { get; set; }
         public double? Width { get; set; }
         public double? Height { get; set; }
-        public bool IsUnitMode { get; set; } // PATCH FINAL: Propagación desde UI
+        [JsonPropertyName("isPhotoSample")]
+        public bool IsPhotoSample { get; set; }
     }
 }

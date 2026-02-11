@@ -39,7 +39,7 @@ function App() {
             }
           />
           <Route
-            path="/inbound/receive/rfid/:orderId"
+            path="/inbound/receive/rfid/:workingMode/:orderId"
             element={
               <ProtectedRoute>
                 <MainLayout>
@@ -59,7 +59,7 @@ function App() {
             }
           />
           <Route
-            path="/inbound/receive/standard/:orderId"
+            path="/inbound/receive/:workingMode/:orderId"
             element={
               <ProtectedRoute>
                 <MainLayout>

@@ -10,6 +10,7 @@ export interface ReceiveParams {
     lpnId?: string;
     lpnCount?: number;
     unitsPerLpn?: number;
+    isPhotoSample?: boolean;
 }
 
 export const inboundService = {
@@ -35,6 +36,11 @@ export const inboundService = {
 
     printRfid: async (lpnId: string) => {
         const { data } = await api.post(`/printing/lpn/${lpnId}/rfid`);
+        return data;
+    },
+
+    patchOrder: async (orderId: string, params: { isCrossdock?: boolean; targetOutboundOrder?: string }) => {
+        const { data } = await api.patch(`/inbound/orders/${orderId}`, params);
         return data;
     }
 };

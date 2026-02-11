@@ -11,13 +11,14 @@ import {
     AlertCircle,
     Clock,
     CheckSquare,
-    Loader2
+    Loader2,
+    Zap
 } from 'lucide-react';
 import { useInbound } from '../../hooks/useInbound';
 
 const InboundDashboard: React.FC = () => {
     const navigate = useNavigate();
-    const { kpis, orders, isLoading, closeOrder, isClosing } = useInbound();
+    const { kpis, orders, isLoading, closeOrder, isClosing, patchOrder, isPatching } = useInbound();
 
     // State for filters
     const [searchTerm, setSearchTerm] = useState('');
@@ -29,6 +30,8 @@ const InboundDashboard: React.FC = () => {
 
     // Modal state
     const [confirmingOrder, setConfirmingOrder] = useState<any>(null);
+    const [crossdockOrder, setCrossdockOrder] = useState<any>(null);
+    const [targetOutbound, setTargetOutbound] = useState('');
 
     // Success message state
     const [lastClosedOrder, setLastClosedOrder] = useState<string | null>(null);
@@ -40,7 +43,9 @@ const InboundDashboard: React.FC = () => {
                 (order.orderNumber || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                 (order.supplier || '').toLowerCase().includes(searchTerm.toLowerCase());
 
-            const matchesStatus = statusFilter === 'All' || order.status === statusFilter;
+            const matchesStatus =
+                statusFilter === 'All' ||
+                (statusFilter === 'Crossdock' ? order.isCrossdock : order.status === statusFilter);
 
             const orderDate = new Date(order.date);
             const matchesDateFrom = !dateFrom || orderDate >= new Date(dateFrom);
@@ -73,6 +78,27 @@ const InboundDashboard: React.FC = () => {
             setTimeout(() => setLastClosedOrder(null), 5000);
         } catch (error) {
             console.error('Failed to close order:', error);
+        }
+    };
+
+    const handleOpenCrossdockConfig = (order: any) => {
+        setCrossdockOrder(order);
+        setTargetOutbound(order.targetOutboundOrder || '');
+    };
+
+    const handleSaveCrossdock = async () => {
+        if (!crossdockOrder) return;
+        try {
+            await patchOrder({
+                orderId: crossdockOrder.id,
+                params: {
+                    isCrossdock: !crossdockOrder.isCrossdock, // Invert toggle if just toggling, or set from modal
+                    targetOutboundOrder: targetOutbound
+                }
+            });
+            setCrossdockOrder(null);
+        } catch (error) {
+            console.error('Failed to update crossdock:', error);
         }
     };
 
@@ -178,6 +204,20 @@ const InboundDashboard: React.FC = () => {
                     </button>
                 </div>
 
+                <div className="flex items-center gap-2 bg-corp-base/50 rounded-2xl p-1 shrink-0 border border-corp-secondary/30">
+                    <button
+                        onClick={() => {
+                            // Logic to filter crossdock in filteredOrders if statusFilter is not enough
+                            // Or just add a new state for modeFilter
+                            setStatusFilter('Crossdock');
+                        }}
+                        className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${statusFilter === 'Crossdock' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-300'}`}
+                    >
+                        <Zap className={`w-3 h-3 ${statusFilter === 'Crossdock' ? 'fill-white' : ''}`} />
+                        Crossdock
+                    </button>
+                </div>
+
                 <div className="flex items-center gap-2 shrink-0">
                     <div className="flex items-center gap-2 bg-corp-base/50 px-3 py-2 rounded-2xl border border-corp-secondary/30">
                         <Calendar className="w-4 h-4 text-slate-500" />
@@ -259,6 +299,15 @@ const InboundDashboard: React.FC = () => {
                                             <div className="flex justify-end gap-2">
                                                 {order.status !== 'Completed' && (
                                                     <button
+                                                        onClick={() => handleOpenCrossdockConfig(order)}
+                                                        className={`p-2 rounded-xl transition-all border border-transparent ${order.isCrossdock ? 'text-blue-400 bg-blue-900/20 border-blue-800/40' : 'text-slate-400 hover:text-blue-400 hover:bg-blue-900/20 hover:border-blue-800/40'}`}
+                                                        title="Configurar Crossdock"
+                                                    >
+                                                        <Zap className={`w-5 h-5 ${order.isCrossdock ? 'fill-blue-400' : ''}`} />
+                                                    </button>
+                                                )}
+                                                {order.status !== 'Completed' && (
+                                                    <button
                                                         onClick={() => handleCloseOrderRequest(order)}
                                                         disabled={isClosing}
                                                         className="p-2 text-slate-400 hover:text-emerald-400 hover:bg-emerald-900/40 rounded-xl transition-all disabled:opacity-50 border border-transparent hover:border-emerald-800/50"
@@ -269,9 +318,8 @@ const InboundDashboard: React.FC = () => {
                                                 )}
                                                 <button
                                                     onClick={() => {
-                                                        const searchParams = new URLSearchParams(window.location.search);
-                                                        const mode = searchParams.get('mode') || 'standard';
-                                                        navigate(`/inbound/receive/${mode}/${order.id}`);
+                                                        const receiveMode = order.isCrossdock ? 'crossdock' : 'standard';
+                                                        navigate(`/inbound/receive/${receiveMode}/${order.id}`);
                                                     }}
                                                     className="p-2 text-slate-400 hover:text-white hover:bg-corp-accent/40 rounded-xl transition-all border border-transparent hover:border-corp-secondary/50"
                                                     title="Continue Receipt"
@@ -390,6 +438,72 @@ const InboundDashboard: React.FC = () => {
                                     className="px-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] bg-emerald-600 text-white shadow-xl shadow-emerald-900/20 hover:bg-emerald-500 transition-all active:scale-95 border border-emerald-400/20"
                                 >
                                     Confirm Close
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Crossdock Config Modal */}
+            {crossdockOrder && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+                    <div className="bg-corp-nav border border-corp-secondary w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+                        <div className="p-8 space-y-6">
+                            <div className="flex items-center gap-4">
+                                <div className="p-4 bg-blue-900/20 rounded-2xl border border-blue-500/30">
+                                    <Zap className="w-6 h-6 text-blue-400 fill-blue-400" />
+                                </div>
+                                <div>
+                                    <h3 className="text-xl font-bold text-white">Planificar Crossdock</h3>
+                                    <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">{crossdockOrder.orderNumber}</p>
+                                </div>
+                            </div>
+
+                            <div className="space-y-4">
+                                <div className="bg-corp-base/50 p-6 rounded-3xl border border-corp-secondary/30 space-y-4">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-sm font-bold text-slate-300">Habilitar Crossdock</span>
+                                        <button
+                                            onClick={() => setCrossdockOrder({ ...crossdockOrder, isCrossdock: !crossdockOrder.isCrossdock })}
+                                            className={`w-12 h-6 rounded-full transition-all relative ${crossdockOrder.isCrossdock ? 'bg-blue-600' : 'bg-slate-700'}`}
+                                        >
+                                            <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${crossdockOrder.isCrossdock ? 'right-1' : 'left-1'}`} />
+                                        </button>
+                                    </div>
+
+                                    {crossdockOrder.isCrossdock && (
+                                        <div className="space-y-2 pt-2 border-t border-corp-secondary/30 animate-in slide-in-from-top-2">
+                                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Orden de Salida Destino</label>
+                                            <input
+                                                type="text"
+                                                placeholder="Ej: SO-12345"
+                                                className="w-full bg-corp-base border border-corp-secondary/50 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all placeholder:text-slate-700"
+                                                value={targetOutbound}
+                                                onChange={(e) => setTargetOutbound(e.target.value)}
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+
+                                <p className="text-[11px] text-slate-500 leading-relaxed font-medium px-2">
+                                    Al marcar esta orden como Crossdock, la mercancía recibida será dirigida directamente a <strong>CROSSDOCK_STAGE</strong> y reservada para la orden destino especificada.
+                                </p>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3 pt-2">
+                                <button
+                                    onClick={() => setCrossdockOrder(null)}
+                                    className="px-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] bg-corp-base/60 text-slate-500 border border-corp-secondary/50 hover:bg-slate-800 transition-all active:scale-95"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    onClick={handleSaveCrossdock}
+                                    disabled={isPatching}
+                                    className="px-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] bg-blue-600 text-white shadow-xl shadow-blue-900/20 hover:bg-blue-500 transition-all active:scale-95 border border-blue-400/20 disabled:opacity-50"
+                                >
+                                    {isPatching ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Guardar'}
                                 </button>
                             </div>
                         </div>

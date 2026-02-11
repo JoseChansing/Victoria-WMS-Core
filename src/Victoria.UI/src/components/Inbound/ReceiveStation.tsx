@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { ArrowLeft, Package, CheckCircle2, AlertCircle, ScanLine, Calculator, Printer, Radio, Camera } from 'lucide-react';
+import { ArrowLeft, Package, CheckCircle2, AlertCircle, ScanLine, Calculator, Printer, Radio, Camera, Zap } from 'lucide-react';
 import { useInbound } from '../../hooks/useInbound';
 import { zebraService } from '../../services/zebra.service';
 
@@ -9,20 +9,21 @@ interface ReceiveStationProps {
     mode: 'rfid' | 'standard';
 }
 
-const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
-    const { orderId } = useParams<{ orderId: string }>();
+const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
+    const { orderId, workingMode } = useParams<{ orderId: string, workingMode: 'standard' | 'crossdock' }>();
     const navigate = useNavigate();
     const { orders, receiveLpn, isReceiving } = useInbound();
 
     // State
-    const [receiveMode, setReceiveMode] = useState<'UNIT' | 'BULK'>('UNIT');
+    const [isPhotoSample, setIsPhotoSample] = useState(false);
     const [scanValue, setScanValue] = useState('');
-    const [quantity, setQuantity] = useState<number | string>(1);
     const [lpnCount, setLpnCount] = useState<number | string>(1);
     const [unitsPerLpn, setUnitsPerLpn] = useState<number | string>(1);
     const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
     const [lastReceivedLpnIds, setLastReceivedLpnIds] = useState<string[]>([]);
     const [printUrl, setPrintUrl] = useState<string | null>(null);
+    const [showPhotoWizard, setShowPhotoWizard] = useState(false);
+    const [selectedSkuForPhoto, setSelectedSkuForPhoto] = useState<string | null>(null);
 
     // Editable Physical Attributes States (Modified to string to solve backspace bug)
     const [manualWeight, setManualWeight] = useState<number | string>(0);
@@ -36,9 +37,10 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
     const order = orders?.find(o => o.id === orderId || o.orderNumber === orderId);
 
     // Calc Peso Estimado
-    const selectedLine = order?.lines.find(l => l.sku === scanValue);
+    // Calc Peso Estimado
+    const selectedLine = order?.lines.find((l: any) => l.sku === scanValue);
 
-    // Sync manual states when SKU changes
+    // Sync manual states and photo sample logic
     useEffect(() => {
         if (selectedLine?.dimensions) {
             setManualWeight(selectedLine.dimensions.weight || 0);
@@ -51,27 +53,39 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
             setManualWidth(0);
             setManualHeight(0);
         }
-    }, [scanValue, selectedLine]);
 
-    const totalEstimatedWeight = receiveMode === 'UNIT'
-        ? Number(quantity) * Number(manualWeight)
-        : Number(lpnCount) * Number(manualWeight);
+        // Auto-Detect Photo Requirement (FORCE TRUE if required)
+        if (selectedLine?.requiresSample && workingMode === 'standard') {
+            setIsPhotoSample(true);
+            setUnitsPerLpn(1);
+            setLpnCount(1);
+        }
+        // NOTE: We don't force false if !requiresSample, allowing manual user override.
+    }, [scanValue, selectedLine, workingMode]);
+
+    // Lock parameters when Photo Sample is active
+    useEffect(() => {
+        if (isPhotoSample) {
+            setUnitsPerLpn(1);
+            setLpnCount(1);
+        }
+    }, [isPhotoSample]);
+
+    const totalEstimatedWeight = Number(lpnCount) * Number(unitsPerLpn) * Number(manualWeight);
 
     const singleVolume = (Number(manualLength) * Number(manualWidth) * Number(manualHeight)) / 1000000;
-    const totalEstimatedVolume = receiveMode === 'UNIT'
-        ? Number(quantity) * singleVolume
-        : Number(lpnCount) * singleVolume;
+    const totalEstimatedVolume = Number(lpnCount) * Number(unitsPerLpn) * singleVolume;
 
     // Auto-focus logic
     useEffect(() => {
         if (inputRef.current) {
             inputRef.current.focus();
         }
-    }, [feedback, order, receiveMode]);
+    }, [feedback, order, workingMode]);
 
     // Derived State
     const totalUnits = order?.totalUnits || 0;
-    const receivedUnits = order?.lines.reduce((acc, l) => acc + l.receivedQty, 0) || 0;
+    const receivedUnits = order?.lines.reduce((acc: number, l: any) => acc + l.receivedQty, 0) || 0;
     const progress = totalUnits > 0 ? (receivedUnits / totalUnits) * 100 : 0;
 
     const handlePrintBatch = async (overrideIds?: string[]) => {
@@ -84,7 +98,7 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
         }
 
         try {
-            if (mode === 'rfid') {
+            if (rfidMode === 'rfid') {
                 console.log("📡 Solicitando ZPL Batch para IDs:", lpnIds);
                 const response = await axios.post('/api/v1/printing/rfid/batch', { ids: lpnIds });
                 const zpl = response.data;
@@ -119,12 +133,12 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
         }
     };
 
-    const handleReceive = async (e: React.FormEvent, autoPrintOverride?: boolean) => {
+    const handleReceive = async (e: React.FormEvent, autoPrintOverride: boolean = true) => {
         e.preventDefault();
         if (!scanValue || !order) return;
 
         // Validation: Verify if SKU belongs to order
-        const line = order.lines.find(l => l.sku === scanValue);
+        const line = order.lines.find((l: any) => l.sku === scanValue);
         if (!line) {
             setFeedback({ type: 'error', message: `El SKU '${scanValue}' no pertenece a esta orden.` });
             setScanValue('');
@@ -135,19 +149,20 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
             const params: any = {
                 orderId: order.id,
                 rawScan: scanValue,
-                quantity: receiveMode === 'UNIT' ? Number(quantity) : (Number(lpnCount) * Number(unitsPerLpn)),
+                quantity: Number(lpnCount) * Number(unitsPerLpn),
+                lpnCount: Number(lpnCount),
+                unitsPerLpn: Number(unitsPerLpn),
                 weight: Number(manualWeight),
                 length: Number(manualLength),
                 width: Number(manualWidth),
                 height: Number(manualHeight),
-                isUnitMode: receiveMode === 'UNIT'
+                isPhotoSample: isPhotoSample
             };
 
             const resetForm = () => {
                 setScanValue('');
-                setQuantity(0);
-                setLpnCount(0);
-                setUnitsPerLpn(0);
+                setLpnCount(1);
+                setUnitsPerLpn(1);
                 setManualWeight(0);
                 setManualLength(0);
                 setManualWidth(0);
@@ -155,9 +170,8 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                 if (inputRef.current) inputRef.current.focus();
             };
 
-            if (receiveMode === 'BULK') {
-                params.lpnCount = Number(lpnCount);
-                params.unitsPerLpn = Number(unitsPerLpn);
+            if (workingMode === 'crossdock') {
+                params.isCrossdock = true;
             }
 
             const response = await receiveLpn(params);
@@ -167,18 +181,19 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                 setLastReceivedLpnIds(lpnIds);
 
                 // AUTO-TRIGGER LOGIC: Unified for Standard and RFID
-                if (mode === 'rfid') {
-                    console.log("🚀 Disparando impresión automática RFID...");
-                    // SILENT AUTO-PROGRAMMING: Non-blocking attempt
-                    setTimeout(() => {
-                        handlePrintBatch(lpnIds).catch((err) => {
-                            console.warn("Auto-RFID print failed - likely zebra service not ready.", err);
-                        });
-                    }, 500);
-                } else {
-                    // Standard PDF Printing (Legacy method)
-                    const shouldPrint = autoPrintOverride ?? true;
-                    if (shouldPrint) {
+                const shouldPrint = autoPrintOverride ?? false;
+
+                if (shouldPrint) {
+                    if (rfidMode === 'rfid') {
+                        console.log("🚀 Disparando impresión automática RFID...");
+                        // SILENT AUTO-PROGRAMMING: Non-blocking attempt
+                        setTimeout(() => {
+                            handlePrintBatch(lpnIds).catch((err) => {
+                                console.warn("Auto-RFID print failed - likely zebra service not ready.", err);
+                            });
+                        }, 500);
+                    } else {
+                        // Standard PDF Printing (Legacy method)
                         console.log("🚀 Generando PDF automático...");
                         setTimeout(() => {
                             const url = `/api/v1/printing/batch?ids=${lpnIds.join(',')}&t=${Date.now()}`;
@@ -188,11 +203,19 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                 }
             }
 
-            const displayQty = receiveMode === 'UNIT' ? quantity : `${lpnCount} bultos x ${unitsPerLpn}`;
-            setFeedback({ type: 'success', message: `Recibido: ${displayQty} de ${line.productName}` });
+            setFeedback({ type: 'success', message: `Recibido: ${lpnCount} LPN(s) x ${unitsPerLpn} unid. de ${line.productName}` });
             resetForm();
         } catch (error: any) {
-            setFeedback({ type: 'error', message: 'Error al recibir. Intente nuevamente.' });
+            // Robust error parsing
+            const errorData = error.response?.data;
+            const errorMsg = (typeof errorData === 'string' ? errorData : errorData?.error) || error.message || '';
+
+            if (errorMsg.includes('[GOLDEN-SAMPLE]')) {
+                setSelectedSkuForPhoto(scanValue);
+                setShowPhotoWizard(true);
+            } else {
+                setFeedback({ type: 'error', message: 'Reception failed. Please try again.' });
+            }
         }
     };
 
@@ -218,8 +241,8 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                     </button>
                     <div>
                         <div className="flex items-center space-x-3">
-                            <span className={`text-[10px] font-black ${mode === 'rfid' ? 'bg-blue-600' : 'bg-emerald-600'} text-white px-3 py-1 rounded-full uppercase tracking-widest shadow-lg shadow-black/40`}>
-                                {mode === 'rfid' ? 'RFID' : 'STANDARD'} RECEIVING
+                            <span className={`text-[10px] font-black ${rfidMode === 'rfid' ? 'bg-blue-600' : 'bg-emerald-600'} text-white px-3 py-1 rounded-full uppercase tracking-widest shadow-lg shadow-black/40`}>
+                                {rfidMode === 'rfid' ? 'RFID' : 'STANDARD'} {workingMode?.toUpperCase()}
                             </span>
                             <h1 className="text-2xl font-black tracking-tighter uppercase whitespace-nowrap">{order.orderNumber}</h1>
                         </div>
@@ -248,26 +271,38 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                         <div className="lg:col-span-5 space-y-8 animate-in slide-in-from-left duration-500">
                             <div className="bg-corp-nav/40 backdrop-blur-md rounded-[2.5rem] p-10 border border-corp-secondary/50 shadow-2xl space-y-8">
 
-                                {/* Mode Switch */}
+                                {/* Mode Switch - Refactored to Standard/Crossdock Tabs */}
                                 <div className="flex p-1.5 bg-corp-nav/60 rounded-2xl border border-corp-secondary/40 shadow-inner">
                                     <button
-                                        onClick={() => setReceiveMode('UNIT')}
-                                        className={`flex-1 py-4 text-xs font-black uppercase tracking-[0.2em] rounded-xl transition-all ${receiveMode === 'UNIT' ? 'bg-corp-accent text-white shadow-xl shadow-black/40' : 'text-slate-500 hover:text-slate-300'}`}
+                                        onClick={() => navigate(`/inbound/receive/standard/${orderId}`)}
+                                        className={`flex-1 py-4 text-[10px] font-black uppercase tracking-[0.2em] rounded-xl transition-all ${workingMode === 'standard' ? 'bg-corp-accent text-white shadow-xl shadow-black/40' : 'text-slate-500 hover:text-slate-300'}`}
                                     >
-                                        Loose Receipt
+                                        RECEPCIÓN ESTÁNDAR
                                     </button>
                                     <button
-                                        onClick={() => setReceiveMode('BULK')}
-                                        className={`flex-1 py-4 text-xs font-black uppercase tracking-[0.2em] rounded-xl transition-all ${receiveMode === 'BULK' ? 'bg-corp-accent text-white shadow-xl shadow-black/40' : 'text-slate-500 hover:text-slate-300'}`}
+                                        onClick={() => navigate(`/inbound/receive/crossdock/${orderId}`)}
+                                        className={`flex-1 py-4 text-[10px] font-black uppercase tracking-[0.2em] rounded-xl transition-all ${workingMode === 'crossdock' ? 'bg-blue-600 text-white shadow-xl shadow-black/40' : 'text-slate-500 hover:text-slate-300'}`}
                                     >
-                                        Bulk Receipt
+                                        PLANNED CROSSDOCK
                                     </button>
                                 </div>
 
                                 <form onSubmit={handleReceive} className="space-y-8">
                                     <div className="pt-4 border-t border-corp-secondary/30">
+                                        {workingMode === 'crossdock' && (
+                                            <div className="mb-6 p-4 bg-blue-900/20 border border-blue-500/30 rounded-2xl animate-in fade-in slide-in-from-top-2">
+                                                <div className="flex items-center gap-3">
+                                                    <Zap className="w-5 h-5 text-blue-400 fill-blue-400" />
+                                                    <div>
+                                                        <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest">DESTINO CROSSDOCK</p>
+                                                        <p className="text-lg font-black text-white uppercase tracking-tight">{order.targetOutboundOrder || 'SIN DESTINO'}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
                                         <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-4 text-center">
-                                            PHYSICAL ATTRIBUTES (OVERRIDE)
+                                            CONTROL DE ESCANEO
                                         </p>
                                         <div className="grid grid-cols-1 gap-4">
                                             <div className="relative group col-span-full">
@@ -290,40 +325,55 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                                     </div>
 
                                     <div className="grid grid-cols-1 gap-6">
-                                        {receiveMode === 'UNIT' ? (
-                                            <div className="animate-in zoom-in duration-300">
+                                        <div className="grid grid-cols-2 gap-4 animate-in zoom-in duration-300">
+                                            <div className="relative group">
                                                 <label className="block text-[10px] font-black text-slate-500 uppercase mb-2 tracking-[0.2em] ml-2">
-                                                    QUANTITY
+                                                    QTY / LPN
                                                 </label>
                                                 <input
                                                     type="text"
-                                                    value={quantity}
-                                                    onChange={(e) => setQuantity(e.target.value)}
-                                                    className="w-full text-4xl py-6 bg-slate-900/60 border-2 border-corp-secondary rounded-3xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono text-center text-white font-black shadow-inner"
+                                                    value={unitsPerLpn}
+                                                    onChange={(e) => setUnitsPerLpn(e.target.value)}
+                                                    disabled={isPhotoSample}
+                                                    className={`w-full text-4xl py-6 bg-slate-900/60 border-2 rounded-3xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono text-center font-black shadow-inner ${isPhotoSample ? 'border-amber-500/50 text-amber-500' : 'border-corp-secondary text-white'}`}
+                                                    onFocus={(e) => e.target.select()}
+                                                />
+                                                {isPhotoSample && (
+                                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 -mt-1 p-2 bg-amber-500/10 rounded-lg border border-amber-500/30">
+                                                        <Camera className="w-5 h-5 text-amber-500" />
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className="relative group">
+                                                <label className="block text-[10px] font-black text-slate-500 uppercase mb-2 tracking-[0.2em] ml-2">
+                                                    LPNs (BULKS)
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={lpnCount}
+                                                    onChange={(e) => setLpnCount(e.target.value)}
+                                                    disabled={isPhotoSample}
+                                                    className={`w-full text-4xl py-6 bg-slate-900/60 border-2 rounded-3xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono text-center font-black shadow-inner ${isPhotoSample ? 'border-amber-500/50 text-amber-500' : 'border-corp-secondary text-white'}`}
                                                     onFocus={(e) => e.target.select()}
                                                 />
                                             </div>
-                                        ) : (
-                                            <div className="grid grid-cols-2 gap-4 animate-in zoom-in duration-300">
-                                                <div>
-                                                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-2 text-center tracking-widest">LPN COUNT</label>
-                                                    <input
-                                                        type="text"
-                                                        value={lpnCount}
-                                                        onChange={(e) => setLpnCount(e.target.value)}
-                                                        className="w-full text-4xl py-6 bg-slate-900/60 border-2 border-corp-secondary rounded-3xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono text-center text-white font-black shadow-inner"
-                                                        onFocus={(e) => e.target.select()}
-                                                    />
+                                        </div>
+
+                                        {workingMode === 'standard' && (
+                                            <div className="bg-corp-base/50 p-6 rounded-3xl border border-corp-secondary/30 flex items-center justify-between group cursor-pointer hover:border-amber-500/40 transition-all"
+                                                onClick={() => setIsPhotoSample(!isPhotoSample)}>
+                                                <div className="flex items-center gap-4">
+                                                    <div className={`p-3 rounded-xl transition-all ${isPhotoSample ? 'bg-amber-500/20 text-amber-500' : 'bg-slate-800 text-slate-500'}`}>
+                                                        <Camera className="w-5 h-5" />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs font-black text-white uppercase tracking-wider">PHOTO-STATION (Muestra)</p>
+                                                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Desviar unidad para control de calidad</p>
+                                                    </div>
                                                 </div>
-                                                <div>
-                                                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-2 text-center tracking-widest">UNITS / LPN</label>
-                                                    <input
-                                                        type="text"
-                                                        value={unitsPerLpn}
-                                                        onChange={(e) => setUnitsPerLpn(e.target.value)}
-                                                        className="w-full text-4xl py-6 bg-slate-900/60 border-2 border-corp-secondary rounded-3xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono text-center text-white font-black shadow-inner"
-                                                        onFocus={(e) => e.target.select()}
-                                                    />
+                                                <div className={`w-12 h-6 rounded-full transition-all relative ${isPhotoSample ? 'bg-amber-600' : 'bg-slate-700'}`}>
+                                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${isPhotoSample ? 'right-1' : 'left-1'}`} />
                                                 </div>
                                             </div>
                                         )}
@@ -379,30 +429,19 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                                         </div>
                                     </div>
 
-                                    <div className="flex flex-col space-y-3">
+                                    <div className="flex flex-col">
                                         <button
-                                            type="button"
-                                            onClick={(e) => handleReceive(e, true)}
+                                            type="submit"
                                             disabled={isReceiving || !scanValue}
                                             className={`w-full py-6 rounded-3xl font-black text-xl shadow-2xl transform active:scale-95 transition-all flex items-center justify-center space-x-3 border
                                                     ${isReceiving ? 'bg-emerald-900/40 text-emerald-800 border-emerald-900/40 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/20 border-emerald-400/20'}`}
                                         >
-                                            {isReceiving && <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>}
-                                            <Printer className="w-6 h-6" />
-                                            <span>{isReceiving ? 'PROCESSING...' : 'RECEIVE & PRINT'}</span>
-                                        </button>
-
-                                        <button
-                                            type="submit"
-                                            disabled={isReceiving}
-                                            className="w-full py-5 bg-gradient-to-r from-blue-600 to-blue-500 rounded-2xl font-black uppercase tracking-[0.2em] shadow-lg shadow-blue-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:grayscale flex items-center justify-center space-x-3 text-white group"
-                                        >
                                             {isReceiving ? (
-                                                <div className="w-6 h-6 border-4 border-white/30 border-t-white rounded-full animate-spin" />
+                                                <div className="w-8 h-8 border-4 border-white/30 border-t-white rounded-full animate-spin" />
                                             ) : (
                                                 <>
-                                                    <CheckCircle2 className="w-6 h-6 group-hover:scale-110 transition-transform" />
-                                                    <span>CONFIRM RECEIPT</span>
+                                                    <CheckCircle2 className="w-6 h-6" />
+                                                    <span>RECEIVE</span>
                                                 </>
                                             )}
                                         </button>
@@ -457,27 +496,26 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                                     {feedback.type === 'success' && lastReceivedLpnIds.length > 0 && (
                                         <button
                                             onClick={() => handlePrintBatch()}
-                                            className={`px-8 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-xl flex items-center space-x-3 border ${mode === 'rfid'
+                                            className={`px-8 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-xl flex items-center space-x-3 border ${rfidMode === 'rfid'
                                                 ? 'bg-blue-600 hover:bg-blue-500 text-white border-blue-400/30'
                                                 : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400/30'
                                                 }`}
                                         >
-                                            {mode === 'rfid' ? <Radio className="w-4 h-4" /> : <Printer className="w-4 h-4" />}
-                                            <span>{mode === 'rfid' ? 'Program RFID Batch' : 'Print Batch'}</span>
+                                            {rfidMode === 'rfid' ? <Radio className="w-4 h-4" /> : <Printer className="w-4 h-4" />}
+                                            <span>{rfidMode === 'rfid' ? 'Program RFID Batch' : 'Print Batch'}</span>
                                         </button>
                                     )}
                                 </div>
                             )}
 
-                            {/* SKU Info Card (Moved inside left column to avoid grid break) */}
+                            {/* SKU Info Card */}
                             {selectedLine && (
-                                <div className="bg-corp-nav/40 backdrop-blur-md rounded-[2.5rem] p-10 border border-corp-secondary/50 shadow-2xl space-y-8 animate-in zoom-in duration-500">
+                                <div className="bg-corp-nav/40 backdrop-blur-md rounded-[2.5rem] p-10 border border-corp-secondary/50 shadow-2xl space-y-8 animate-in zoom-in duration-500 mt-8">
                                     <div className="flex items-center justify-between mb-6">
                                         <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
                                             <Package className="w-4 h-4 text-blue-400" />
-                                            REQUISITION LINES
+                                            SELECTED ITEM DETAILS
                                         </h2>
-                                        <span className="text-[10px] font-bold bg-corp-base px-2 py-1 rounded text-slate-500">{order.lines.length} SKUs</span>
                                     </div>
                                     <div className="flex items-center space-x-6">
                                         <div className="p-5 bg-corp-base rounded-[2rem] border border-corp-secondary/50 text-blue-400 shadow-inner">
@@ -538,7 +576,7 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                                     </div>
                                 </div>
                                 <ul className="divide-y divide-corp-secondary/10 flex-1 overflow-y-auto custom-scrollbar">
-                                    {order.lines.map((line, index) => {
+                                    {order.lines.map((line: any, index: number) => {
                                         const isComplete = line.receivedQty >= line.expectedQty;
                                         return (
                                             <li key={`${line.sku}-${index}`} className={`p-6 flex items-center justify-between transition-all ${isComplete ? 'bg-corp-base/20 opacity-40' : 'hover:bg-corp-accent/5'}`}>
@@ -603,7 +641,54 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                 </div>
             </main>
 
-            {/* Hidden Iframe for direct printing */}
+            {/* Photo Requirement Wizard */}
+            {showPhotoWizard && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+                    <div className="bg-corp-nav border-2 border-amber-500/50 rounded-[3rem] shadow-[0_0_100px_rgba(245,158,11,0.2)] max-w-xl w-full p-10 overflow-hidden relative group">
+                        {/* Decorative Background Glow */}
+                        <div className="absolute -top-24 -right-24 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl group-hover:bg-amber-500/20 transition-all duration-700"></div>
+
+                        <div className="relative flex flex-col items-center text-center space-y-8">
+                            <div className="p-8 bg-amber-500/10 rounded-full border border-amber-500/20 shadow-inner group-hover:scale-110 transition-transform duration-500">
+                                <Camera className="w-16 h-16 text-amber-500" />
+                            </div>
+
+                            <div className="space-y-4">
+                                <h2 className="text-4xl font-black text-white tracking-tight uppercase">Photo Required</h2>
+                                <div className="h-1.5 w-24 bg-amber-500 mx-auto rounded-full"></div>
+                                <p className="text-slate-400 text-lg font-medium leading-relaxed px-4">
+                                    Product <span className="text-amber-400 font-black">{selectedSkuForPhoto}</span> has no image in the system.
+                                </p>
+                            </div>
+
+                            <div className="bg-amber-900/20 border border-amber-500/30 p-6 rounded-3xl w-full flex items-start space-x-4">
+                                <AlertCircle className="w-6 h-6 text-amber-500 shrink-0 mt-1" />
+                                <div className="text-left">
+                                    <p className="text-amber-200 font-black text-sm uppercase tracking-wider mb-1">Mandatory Action</p>
+                                    <p className="text-amber-100/70 text-xs leading-relaxed font-bold">
+                                        You MUST receive <span className="text-amber-400">1 unit</span> at the <span className="text-white">PHOTO-STATION</span> before proceeding with stock reception.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col space-y-4 w-full">
+                                <button
+                                    onClick={() => {
+                                        setShowPhotoWizard(false);
+                                        setScanValue('');
+                                        if (inputRef.current) inputRef.current.focus();
+                                    }}
+                                    className="w-full py-5 bg-amber-500 hover:bg-amber-400 text-black font-black text-xl rounded-2xl shadow-2xl transition-all transform active:scale-95 uppercase tracking-widest"
+                                >
+                                    Understood
+                                </button>
+                                <p className="text-[9px] text-slate-500 font-bold uppercase tracking-[0.2em]">Quality Control Protocol v2.5</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {printUrl && (
                 <iframe
                     src={printUrl}

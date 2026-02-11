@@ -28,6 +28,8 @@ export interface PurchaseOrder {
     status: 'Pending' | 'In Progress' | 'Completed';
     totalUnits: number;
     priority: 'Low' | 'Medium' | 'High';
+    isCrossdock: boolean;
+    targetOutboundOrder?: string;
     lines: ReceiptLine[];
 }
 

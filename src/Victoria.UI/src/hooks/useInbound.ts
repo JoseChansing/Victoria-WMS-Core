@@ -30,15 +30,25 @@ export const useInbound = () => {
         }
     });
 
+    const patchOrderMutation = useMutation({
+        mutationFn: ({ orderId, params }: { orderId: string, params: any }) =>
+            inboundService.patchOrder(orderId, params),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['inbound-orders'] });
+        }
+    });
+
     return {
         kpis: kpisQuery.data,
-        orders: ordersQuery.data || [],
+        orders: (ordersQuery.data || []) as any[],
         isLoading: kpisQuery.isLoading || ordersQuery.isLoading,
         error: kpisQuery.error || ordersQuery.error,
         receiveLpn: receiveMutation.mutateAsync,
         isReceiving: receiveMutation.isPending,
         closeOrder: closeOrderMutation.mutateAsync,
         isClosing: closeOrderMutation.isPending,
+        patchOrder: patchOrderMutation.mutateAsync,
+        isPatching: patchOrderMutation.isPending,
         printRfid: (lpnId: string) => inboundService.printRfid(lpnId)
     };
 };

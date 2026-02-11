@@ -12,6 +12,8 @@ namespace Victoria.Inventory.Domain.Aggregates
         public string Status { get; set; } = "Pending";
         public string Date { get; set; } = DateTime.UtcNow.ToString("yyyy-MM-dd");
         public int TotalUnits { get; set; }
+        public bool IsCrossdock { get; set; }
+        public string? TargetOutboundOrder { get; set; }
         public List<InboundLine> Lines { get; set; } = new();
     }
 
