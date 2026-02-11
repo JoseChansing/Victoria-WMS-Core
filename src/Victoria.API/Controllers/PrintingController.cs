@@ -172,6 +172,7 @@ namespace Victoria.API.Controllers
             string sku = lpn.Sku?.Value ?? "UNKNOWN";
             string receipt = lpn.SelectedOrderId ?? "N/A";
             string timestamp = lpn.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm");
+            double volume = (lpn.PhysicalAttributes.Length * lpn.PhysicalAttributes.Width * lpn.PhysicalAttributes.Height) / 1000000.0;
 
             var html = $@"
 <!DOCTYPE html>
@@ -179,36 +180,86 @@ namespace Victoria.API.Controllers
 <head>
     <script src=""https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js""></script>
     <style>
-        body {{ margin: 0; padding: 0; font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background: #f0f0f0; }}
+        body {{ margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background: #f0f0f0; }}
         .label-container {{
-            width: 4in; height: 3in; background: white; border: 1px solid black; box-sizing: border-box;
-            padding: 15px; display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+            width: 4in; height: 3in; background: white; border: 2px solid black; box-sizing: border-box;
+            padding: 8px; display: flex; flex-direction: column; overflow: hidden;
         }}
-        .header {{ font-size: 16px; font-weight: bold; width: 100%; text-align: center; border-bottom: 1px solid #000; padding-bottom: 5px; }}
-        .barcode-container {{ flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; }}
-        .barcode-svg {{ width: 90%; height: 100px; }}
-        .sku-text {{ font-size: 24px; font-weight: 900; margin-top: 5px; }}
+        .top-header {{ font-size: 7px; font-weight: bold; color: #555; text-transform: uppercase; margin-bottom: 2px; }}
+        .order-title {{ font-size: 14px; font-weight: 900; text-align: center; border-bottom: 1px solid black; padding-bottom: 2px; margin-bottom: 5px; }}
+        .product-section {{ flex: 1; display: flex; flex-direction: column; }}
+        .sku-row {{ display: flex; justify-content: space-between; align-items: baseline; }}
+        .sku-label {{ font-size: 10px; font-weight: bold; }}
+        .sku-val {{ font-size: 26px; font-weight: 900; tracking: -1px; }}
+        .brand-side {{ font-size: 11px; font-weight: bold; color: #333; margin-top: -2px; }}
+        
+        .main-barcodes {{ display: flex; gap: 10px; align-items: flex-end; margin-top: 5px; }}
+        .barcode-box {{ flex: 1; display: flex; flex-direction: column; align-items: center; }}
+        .barcode-box span {{ font-size: 7px; font-weight: bold; margin-bottom: 2px; }}
+        .barcode-svg {{ width: 100%; height: 50px; }}
+        .barcode-text {{ font-size: 9px; font-weight: bold; margin-top: 2px; }}
+
+        .stats-grid {{ 
+            display: grid; grid-template-cols: 1fr 1fr; gap: 5px; 
+            margin-top: 8px; padding-top: 5px; border-top: 1px dashed #ccc;
+        }}
+        .stat-item {{ font-size: 9px; display: flex; justify-content: space-between; padding: 1px 0; }}
+        .stat-item b {{ font-weight: 900; }}
+        
         .footer {{ 
-            width: 100%; display: flex; justify-content: space-between; align-items: flex-end;
-            font-size: 10px; font-weight: bold; border-top: 1px solid #000; padding-top: 5px;
+            margin-top: auto; display: flex; justify-content: space-between; 
+            font-size: 8px; color: #666; font-weight: bold; padding-top: 4px;
         }}
-        .id-ref {{ font-size: 8px; color: #666; }}
     </style>
 </head>
 <body>
     <div class=""label-container"">
-        <div class=""header"">RECIBO: {receipt}</div>
-        <div class=""barcode-container"">
-            <svg class=""barcode-svg"" id=""barcode""></svg>
-            <div class=""sku-text"">{sku}</div>
+        <div class=""top-header"">Victoria WMS Core</div>
+        <div class=""order-title"">RECIBO: {receipt}</div>
+        
+        <div class=""product-section"">
+            <div class=""sku-row"">
+                <span class=""sku-label"">ITEM:</span>
+                <span class=""sku-val"">{sku}</span>
+            </div>
+            <div class=""brand-side"">
+                MARCA: {lpn.Brand} | LADO: {lpn.Sides}
+            </div>
+
+            <div class=""main-barcodes"">
+                <div class=""barcode-box"">
+                    <span>LPN BARCODE</span>
+                    <svg class=""barcode-svg"" id=""barcode-lpn""></svg>
+                    <div class=""barcode-text"">{lpn.Id}</div>
+                </div>
+                {(!string.IsNullOrEmpty(lpn.ProductBarcode) ? $@"
+                <div class=""barcode-box"">
+                    <span>PRODUCT BARCODE</span>
+                    <svg class=""barcode-svg"" id=""barcode-prod""></svg>
+                    <div class=""barcode-text"">{lpn.ProductBarcode}</div>
+                </div>" : "")}
+            </div>
+
+            <div class=""stats-grid"">
+                <div class=""left-stats"">
+                    <div class=""stat-item""><span>CANTIDAD:</span> <b>{lpn.Quantity} UN</b></div>
+                    <div class=""stat-item""><span>PESO:</span> <b>{lpn.PhysicalAttributes.Weight} KG</b></div>
+                </div>
+                <div class=""right-stats"">
+                    <div class=""stat-item""><span>DIM:</span> <b>{lpn.PhysicalAttributes.Length}x{lpn.PhysicalAttributes.Width}x{lpn.PhysicalAttributes.Height} CM</b></div>
+                    <div class=""stat-item""><span>VOL:</span> <b>{volume:F4} M3</b></div>
+                </div>
+            </div>
         </div>
+
         <div class=""footer"">
             <span>FECHA: {timestamp}</span>
-            <span class=""id-ref"">ID: {lpn.Id}</span>
+            <span>Victoria WMS - LOCAL NODE</span>
         </div>
     </div>
     <script>
-        JsBarcode(""#barcode"", ""{sku}"", {{ format: ""CODE128"", displayValue: false, margin: 0 }});
+        JsBarcode(""#barcode-lpn"", ""{lpn.Id}"", {{ format: ""CODE128"", displayValue: false, margin: 0, height: 40 }});
+        {(!string.IsNullOrEmpty(lpn.ProductBarcode) ? $@"JsBarcode(""#barcode-prod"", ""{lpn.ProductBarcode}"", {{ format: ""CODE128"", displayValue: false, margin: 0, height: 40 }});" : "")}
         window.onload = function() {{ window.print(); }}
     </script>
 </body>
@@ -249,27 +300,42 @@ namespace Victoria.API.Controllers
             htmlBuilder.Append(@"<!DOCTYPE html><html><head>
                 <script src=""https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js""></script>
                 <style>
-                body { margin:0; padding:0; font-family: Arial, sans-serif; }
+                body { margin:0; padding:0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
                 .label-container { 
                     width: 4in; height: 3in; 
-                    border: 1px solid black; 
+                    border: 2px solid black; 
                     page-break-after: always; 
                     box-sizing: border-box;
-                    padding: 15px;
+                    padding: 8px;
                     display: flex;
                     flex-direction: column;
-                    align-items: center;
-                    justify-content: space-between;
+                    overflow: hidden;
                 }
-                .header { font-size: 16px; font-weight: bold; width: 100%; text-align: center; border-bottom: 1px solid #000; padding-bottom: 5px; }
-                .barcode-container { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; }
-                .barcode-svg { width: 90%; height: 100px; }
-                .sku-text { font-size: 24px; font-weight: 900; margin-top: 5px; }
+                .top-header { font-size: 7px; font-weight: bold; color: #555; text-transform: uppercase; margin-bottom: 2px; }
+                .order-title { font-size: 14px; font-weight: 900; text-align: center; border-bottom: 1px solid black; padding-bottom: 2px; margin-bottom: 5px; }
+                .product-section { flex: 1; display: flex; flex-direction: column; }
+                .sku-row { display: flex; justify-content: space-between; align-items: baseline; }
+                .sku-label { font-size: 10px; font-weight: bold; }
+                .sku-val { font-size: 26px; font-weight: 900; tracking: -1px; }
+                .brand-side { font-size: 11px; font-weight: bold; color: #333; margin-top: -2px; }
+                
+                .main-barcodes { display: flex; gap: 10px; align-items: flex-end; margin-top: 5px; }
+                .barcode-box { flex: 1; display: flex; flex-direction: column; align-items: center; }
+                .barcode-box span { font-size: 7px; font-weight: bold; margin-bottom: 2px; }
+                .barcode-svg { width: 100%; height: 50px; }
+                .barcode-text { font-size: 9px; font-weight: bold; margin-top: 2px; }
+
+                .stats-grid { 
+                    display: grid; grid-template-cols: 1fr 1fr; gap: 5px; 
+                    margin-top: 8px; padding-top: 5px; border-top: 1px dashed #ccc;
+                }
+                .stat-item { font-size: 9px; display: flex; justify-content: space-between; padding: 1px 0; }
+                .stat-item b { font-weight: 900; }
+                
                 .footer { 
-                    width: 100%; display: flex; justify-content: space-between; align-items: flex-end;
-                    font-size: 10px; font-weight: bold; border-top: 1px solid #000; padding-top: 5px;
+                    margin-top: auto; display: flex; justify-content: space-between; 
+                    font-size: 8px; color: #666; font-weight: bold; padding-top: 4px;
                 }
-                .id-ref { font-size: 8px; color: #666; }
             </style></head><body>");
 
             foreach (var lpnId in lpnIds)
@@ -281,21 +347,56 @@ namespace Victoria.API.Controllers
                 string sku = lpn.Sku?.Value ?? "UNKNOWN";
                 string receipt = order?.OrderNumber ?? lpn.SelectedOrderId ?? "N/A";
                 string timestamp = lpn.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm");
+                double volume = (lpn.PhysicalAttributes.Length * lpn.PhysicalAttributes.Width * lpn.PhysicalAttributes.Height) / 1000000.0;
 
                 htmlBuilder.Append($@"
                 <div class=""label-container"">
-                    <div class=""header"">RECIBO: {receipt}</div>
-                    <div class=""barcode-container"">
-                        <svg class=""barcode-svg"" id=""barcode-{lpn.Id}""></svg>
-                        <div class=""sku-text"">{sku}</div>
+                    <div class=""top-header"">Victoria WMS Core</div>
+                    <div class=""order-title"">RECIBO: {receipt}</div>
+                    
+                    <div class=""product-section"">
+                        <div class=""sku-row"">
+                            <span class=""sku-label"">ITEM:</span>
+                            <span class=""sku-val"">{sku}</span>
+                        </div>
+                        <div class=""brand-side"">
+                            MARCA: {lpn.Brand} | LADO: {lpn.Sides}
+                        </div>
+
+                        <div class=""main-barcodes"">
+                            <div class=""barcode-box"">
+                                <span>LPN BARCODE</span>
+                                <svg class=""barcode-svg"" id=""barcode-lpn-{lpn.Id}""></svg>
+                                <div class=""barcode-text"">{lpn.Id}</div>
+                            </div>
+                            {(!string.IsNullOrEmpty(lpn.ProductBarcode) ? $@"
+                            <div class=""barcode-box"">
+                                <span>PRODUCT BARCODE</span>
+                                <svg class=""barcode-svg"" id=""barcode-prod-{lpn.Id}""></svg>
+                                <div class=""barcode-text"">{lpn.ProductBarcode}</div>
+                            </div>" : "")}
+                        </div>
+
+                        <div class=""stats-grid"">
+                            <div class=""left-stats"">
+                                <div class=""stat-item""><span>CANTIDAD:</span> <b>{lpn.Quantity} UN</b></div>
+                                <div class=""stat-item""><span>PESO:</span> <b>{lpn.PhysicalAttributes.Weight} KG</b></div>
+                            </div>
+                            <div class=""right-stats"">
+                                <div class=""stat-item""><span>DIM:</span> <b>{lpn.PhysicalAttributes.Length}x{lpn.PhysicalAttributes.Width}x{lpn.PhysicalAttributes.Height} CM</b></div>
+                                <div class=""stat-item""><span>VOL:</span> <b>{volume:F4} M3</b></div>
+                            </div>
+                        </div>
                     </div>
+
                     <div class=""footer"">
                         <span>FECHA: {timestamp}</span>
-                        <span class=""id-ref"">ID: {lpn.Id}</span>
+                        <span>Victoria WMS - LOCAL NODE</span>
                     </div>
                 </div>
                 <script>
-                    JsBarcode(""#barcode-{lpn.Id}"", ""{sku}"", {{ format: ""CODE128"", displayValue: false, margin: 0 }});
+                    JsBarcode(""#barcode-lpn-{lpn.Id}"", ""{lpn.Id}"", {{ format: ""CODE128"", displayValue: false, margin: 0, height: 40 }});
+                    {(!string.IsNullOrEmpty(lpn.ProductBarcode) ? $@"JsBarcode(""#barcode-prod-{lpn.Id}"", ""{lpn.ProductBarcode}"", {{ format: ""CODE128"", displayValue: false, margin: 0, height: 40 }});" : "")}
                 </script>");
             }
 

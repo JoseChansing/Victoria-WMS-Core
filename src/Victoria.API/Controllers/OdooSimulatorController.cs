@@ -2,6 +2,8 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Victoria.Infrastructure.Integration.Odoo;
+using Victoria.Core.Interfaces;
+using Victoria.Core.Models;
 
 namespace Victoria.API.Controllers
 {
@@ -9,10 +11,10 @@ namespace Victoria.API.Controllers
     [Route("simulate/odoo")]
     public class OdooSimulatorController : ControllerBase
     {
-        private readonly ProductSyncService _productSync;
-        private readonly InboundOrderSyncService _orderSync;
+        private readonly IProductService _productSync;
+        private readonly IInboundService _orderSync;
 
-        public OdooSimulatorController(ProductSyncService productSync, InboundOrderSyncService orderSync)
+        public OdooSimulatorController(IProductService productSync, IInboundService orderSync)
         {
             _productSync = productSync;
             _orderSync = orderSync;

@@ -6,6 +6,8 @@ export interface ReceiptLine {
     id: string;
     sku: string;
     productName: string;
+    brand?: string;
+    sides?: string;
     expectedQty: number;
     receivedQty: number;
     requiresSample: boolean;

@@ -1,7 +1,11 @@
 // src/Victoria.UI/src/features/inventory/SkuMaster.tsx
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
-import { Search, Database, Trash2, ChevronLeft, ChevronRight, Loader2, X } from 'lucide-react';
+import {
+    Search, Database, ChevronLeft, ChevronRight, ChevronDown,
+    Filter, X, Trash2,
+    Tag, Layers, Image, Loader2
+} from 'lucide-react';
 import api from '../../api/axiosConfig';
 
 interface Product {
@@ -34,27 +38,34 @@ interface PagedResult<T> {
 export const SkuMaster: React.FC = () => {
     const queryClient = useQueryClient();
     const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(50);
+    const [rangeInput, setRangeInput] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [searchTags, setSearchTags] = useState<string[]>([]);
     const [serverSearch, setServerSearch] = useState(''); // Combined value for query
     const [showSuggestions, setShowSuggestions] = useState(false);
 
-    // Debounce Search Effect
+    // Filters State (Free Text Search)
+    const [brandFilter, setBrandFilter] = useState('');
+    const [categoryFilter, setCategoryFilter] = useState('');
+    const [selectedHasImage, setSelectedHasImage] = useState('');
+
+    // Debounce Search Effect (Search + Filters)
     React.useEffect(() => {
         const timer = setTimeout(() => {
             const combinedSearch = [...searchTags, searchTerm].filter(Boolean).join(',');
             setServerSearch(combinedSearch);
-            setPage(1); // Reset to page 1 on search
+            setPage(1);
         }, 300);
         return () => clearTimeout(timer);
-    }, [searchTerm, searchTags]);
+    }, [searchTerm, searchTags, brandFilter, categoryFilter]);
 
     // Suggestions Query
     const { data: suggestionsData, isLoading: suggestionsLoading } = useQuery({
         queryKey: ['suggestions', searchTerm],
         queryFn: async () => {
             if (searchTerm.length < 2) return [];
-            const { data } = await api.get<PagedResult<Product>>(`/products?search=${searchTerm}&pageSize=10`);
+            const { data } = await api.get<PagedResult<Product>>(`products?search=${searchTerm}&pageSize=10`);
             return data.items;
         },
         enabled: searchTerm.length >= 2 && showSuggestions
@@ -63,15 +74,17 @@ export const SkuMaster: React.FC = () => {
     const suggestions = suggestionsData || [];
 
     const { data, isLoading } = useQuery({
-        queryKey: ['products', page, serverSearch],
+        queryKey: ['products', page, pageSize, serverSearch, brandFilter, categoryFilter, selectedHasImage],
         queryFn: async () => {
-            // Query Params construction
             const params = new URLSearchParams();
             params.append('page', page.toString());
-            params.append('pageSize', '50');
+            params.append('pageSize', pageSize.toString());
             if (serverSearch) params.append('search', serverSearch);
+            if (brandFilter) params.append('brand', brandFilter);
+            if (categoryFilter) params.append('category', categoryFilter);
+            if (selectedHasImage) params.append('hasImage', selectedHasImage);
 
-            const { data } = await api.get<PagedResult<Product>>(`/products?${params.toString()}`);
+            const { data } = await api.get<PagedResult<Product>>(`products?${params.toString()}`);
             return data;
         },
         placeholderData: keepPreviousData
@@ -79,11 +92,10 @@ export const SkuMaster: React.FC = () => {
 
     const products = data?.items || [];
     const totalItems = data?.totalItems || 0;
-    const totalPages = data?.totalPages || 0;
 
     const deleteMutation = useMutation({
         mutationFn: async (sku: string) => {
-            return await api.delete(`/products/${sku}`);
+            return await api.delete(`products/${sku}`);
         },
         onSuccess: () => {
             alert("✅ Product successfully deleted");
@@ -134,12 +146,42 @@ export const SkuMaster: React.FC = () => {
         }
     };
 
+    React.useEffect(() => {
+        if (totalItems > 0) {
+            const start = (page - 1) * pageSize + 1;
+            const end = Math.min(page * pageSize, totalItems);
+            setRangeInput(`${start}-${end}`);
+        } else {
+            setRangeInput('0-0');
+        }
+    }, [page, pageSize, totalItems]);
+
+    const handleRangeCommit = () => {
+        const parts = rangeInput.split(/[-/]/);
+        if (parts.length === 2) {
+            const start = parseInt(parts[0].trim());
+            const end = parseInt(parts[1].trim());
+
+            if (!isNaN(start) && !isNaN(end) && end >= start && start > 0) {
+                const newSize = end - start + 1;
+                const newPage = Math.floor((start - 1) / newSize) + 1;
+                const safeSize = Math.min(newSize, 10000);
+                setPageSize(safeSize);
+                setPage(newPage);
+                return;
+            }
+        }
+        const start = (page - 1) * pageSize + 1;
+        const end = Math.min(page * pageSize, totalItems);
+        setRangeInput(`${start}-${end}`);
+    };
+
     return (
-        <div className="space-y-8 animate-in fade-in duration-500 h-full flex flex-col">
-            <div className="flex items-center justify-between shrink-0">
+        <div className="space-y-4 animate-in fade-in duration-500 h-[calc(100vh-140px)] flex flex-col">
+            <div className="flex items-center justify-between shrink-0 px-2">
                 <div>
                     <h1 className="text-2xl font-black text-white tracking-tight">SKU Master</h1>
-                    <p className="text-slate-400 font-medium">Consolidated catalog ({totalItems} items)</p>
+                    <p className="text-slate-400 font-medium">Consolidated catalog ({totalItems.toLocaleString()} items)</p>
                 </div>
                 <div className="bg-corp-nav/40 text-blue-300 px-5 py-2.5 rounded-2xl border border-corp-secondary shadow-lg shadow-black/10 flex items-center space-x-3">
                     <Database className="w-5 h-5" />
@@ -150,9 +192,8 @@ export const SkuMaster: React.FC = () => {
             </div>
 
             <div className="bg-corp-nav/40 rounded-3xl border border-corp-secondary shadow-lg shadow-black/10 flex flex-col flex-1 overflow-hidden">
-                {/* Fixed Header with Search */}
                 <div className="p-6 border-b border-corp-secondary/50 flex flex-col space-y-4 bg-corp-base/30 shrink-0">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-4">
                         <div className="relative w-full max-w-2xl">
                             <div className={`flex flex-wrap items-center gap-2 p-1.5 bg-corp-base/50 border border-corp-secondary/50 rounded-xl min-h-[46px] focus-within:ring-2 focus-within:ring-corp-accent transition-all ${showSuggestions && suggestions.length > 0 ? 'rounded-b-none' : ''}`}>
                                 <Search className="w-4 h-4 ml-3 text-slate-500 shrink-0" />
@@ -160,10 +201,7 @@ export const SkuMaster: React.FC = () => {
                                 {searchTags.map(tag => (
                                     <span key={tag} className="flex items-center gap-1 px-2 py-1 bg-blue-600/20 text-blue-100 border border-blue-500/30 rounded-lg text-xs font-bold animate-in zoom-in-95 duration-200">
                                         {tag}
-                                        <button
-                                            onClick={() => handleRemoveTag(tag)}
-                                            className="hover:text-rose-400 transition-colors"
-                                        >
+                                        <button onClick={() => handleRemoveTag(tag)} className="hover:text-rose-400 transition-colors">
                                             <X className="w-3 h-3" />
                                         </button>
                                     </span>
@@ -184,7 +222,6 @@ export const SkuMaster: React.FC = () => {
                                 {(isLoading || suggestionsLoading) && <Loader2 className="w-4 h-4 mr-3 text-blue-500 animate-spin shrink-0" />}
                             </div>
 
-                            {/* Suggestions Dropdown */}
                             {showSuggestions && suggestions.length > 0 && (
                                 <div className="absolute top-full left-0 right-0 bg-corp-nav border-x border-b border-corp-secondary rounded-b-xl shadow-2xl z-50 overflow-hidden animate-in slide-in-from-top-2 duration-200">
                                     {suggestions.map((s) => (
@@ -206,50 +243,134 @@ export const SkuMaster: React.FC = () => {
                             )}
                         </div>
 
-                        {/* Pagination Controls */}
-                        <div className="flex items-center space-x-2">
-                            <button
-                                onClick={() => setPage(old => Math.max(old - 1, 1))}
-                                disabled={page === 1 || isLoading}
-                                className="p-2.5 bg-corp-base/50 border border-corp-secondary/50 rounded-xl hover:bg-corp-accent/40 transition-all text-slate-400 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                <ChevronLeft className="w-4 h-4" />
-                            </button>
-                            <span className="text-sm font-mono text-slate-500 w-24 text-center">
-                                {page} / {totalPages || 1}
-                            </span>
-                            <button
-                                onClick={() => setPage(old => (data?.hasNextPage ? old + 1 : old))}
-                                disabled={!data?.hasNextPage || isLoading}
-                                className="p-2.5 bg-corp-base/50 border border-corp-secondary/50 rounded-xl hover:bg-corp-accent/40 transition-all text-slate-400 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                <ChevronRight className="w-4 h-4" />
-                            </button>
+                        <div className="flex items-center gap-4">
+                            {/* Filter Menu (Odoo Style - FIXED HOVER) */}
+                            <div className="relative group/menu py-1"> {/* py-1 creates a protection zone to avoid gaps */}
+                                <button
+                                    className="flex items-center gap-2 px-4 py-2.5 bg-corp-base/50 border border-corp-secondary/50 rounded-xl text-sm font-bold text-slate-300 hover:text-white hover:bg-corp-accent/10 hover:border-corp-accent/50 transition-all data-[active=true]:text-corp-accent data-[active=true]:border-corp-accent"
+                                    data-active={brandFilter !== '' || categoryFilter !== '' || selectedHasImage !== ''}
+                                >
+                                    <Filter className="w-4 h-4" />
+                                    <span>Filters</span>
+                                    {(brandFilter !== '' || categoryFilter !== '' || selectedHasImage !== '') && (
+                                        <span className="flex items-center justify-center w-5 h-5 ml-1 text-[10px] bg-corp-accent text-white rounded-full">
+                                            {(brandFilter ? 1 : 0) + (categoryFilter ? 1 : 0) + (selectedHasImage ? 1 : 0)}
+                                        </span>
+                                    )}
+                                    <ChevronDown className="w-3 h-3 ml-1 opacity-50" />
+                                </button>
+
+                                <div className="absolute top-full left-0 mt-0 w-64 bg-corp-nav border border-corp-secondary rounded-xl shadow-2xl z-50 overflow-visible p-1 hidden group-hover/menu:block hover:block animate-in fade-in zoom-in-95 duration-200">
+                                    {/* Brand Filter Input */}
+                                    <div className="p-2 pt-3">
+                                        <div className="flex items-center gap-2 px-3 py-1.5 bg-corp-base/50 border border-corp-secondary/50 rounded-lg group-within:border-corp-accent/50 transition-colors">
+                                            <Tag className="w-4 h-4 text-indigo-400" />
+                                            <input
+                                                type="text"
+                                                placeholder="Filter by Brand..."
+                                                value={brandFilter}
+                                                onChange={(e) => { setBrandFilter(e.target.value); setPage(1); }}
+                                                className="bg-transparent border-none focus:ring-0 text-xs text-white placeholder:text-slate-600 outline-none w-full"
+                                            />
+                                            {brandFilter && (
+                                                <button onClick={() => setBrandFilter('')}>
+                                                    <X className="w-3 h-3 text-slate-500 hover:text-white" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Category Filter Input */}
+                                    <div className="p-2">
+                                        <div className="flex items-center gap-2 px-3 py-1.5 bg-corp-base/50 border border-corp-secondary/50 rounded-lg group-within:border-corp-accent/50 transition-colors">
+                                            <Layers className="w-4 h-4 text-emerald-400" />
+                                            <input
+                                                type="text"
+                                                placeholder="Filter by Category..."
+                                                value={categoryFilter}
+                                                onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
+                                                className="bg-transparent border-none focus:ring-0 text-xs text-white placeholder:text-slate-600 outline-none w-full"
+                                            />
+                                            {categoryFilter && (
+                                                <button onClick={() => setCategoryFilter('')}>
+                                                    <X className="w-3 h-3 text-slate-500 hover:text-white" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="h-px bg-corp-secondary/30 my-1"></div>
+
+                                    <div className="h-px bg-corp-secondary/30 my-1"></div>
+
+                                    <div className="relative group/submenu">
+                                        <button className="w-full flex items-center justify-between px-3 py-2 text-sm text-slate-300 hover:bg-corp-base/50 hover:text-white rounded-lg transition-colors">
+                                            <div className="flex items-center gap-2">
+                                                <Image className="w-4 h-4 text-amber-400" />
+                                                <span>Image</span>
+                                            </div>
+                                            <ChevronRight className="w-3 h-3 text-slate-500" />
+                                        </button>
+                                        {/* Submenu with hover bridge */}
+                                        <div className="absolute top-0 left-full w-48 bg-corp-nav border border-corp-secondary rounded-xl shadow-2xl p-2 hidden group-hover/submenu:block hover:block animate-in slide-in-from-left-2 duration-200">
+                                            {/* Invisible bridge to maintain hover state across the gap */}
+                                            <div className="absolute -left-4 top-0 bottom-0 w-4 bg-transparent" />
+
+                                            <button onClick={() => { setSelectedHasImage(''); setPage(1); }} className={`w-full text-left px-3 py-1.5 text-sm rounded-lg mb-1 ${selectedHasImage === '' ? 'bg-corp-accent/20 text-corp-accent font-bold' : 'text-slate-400 hover:bg-corp-base/50 hover:text-white'}`}>All Products</button>
+                                            <button onClick={() => { setSelectedHasImage('true'); setPage(1); }} className={`w-full text-left px-3 py-1.5 text-sm rounded-lg mb-1 ${selectedHasImage === 'true' ? 'bg-corp-accent/20 text-corp-accent font-bold' : 'text-slate-400 hover:bg-corp-base/50 hover:text-white'}`}>With Image</button>
+                                            <button onClick={() => { setSelectedHasImage('false'); setPage(1); }} className={`w-full text-left px-3 py-1.5 text-sm rounded-lg ${selectedHasImage === 'false' ? 'bg-corp-accent/20 text-corp-accent font-bold' : 'text-slate-400 hover:bg-corp-base/50 hover:text-white'}`}>No Image</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center space-x-3">
+                                <div className="flex items-center space-x-2">
+                                    <input
+                                        type="text"
+                                        value={rangeInput}
+                                        onChange={(e) => setRangeInput(e.target.value)}
+                                        onBlur={handleRangeCommit}
+                                        onKeyDown={(e) => e.key === 'Enter' && handleRangeCommit()}
+                                        className="w-24 bg-corp-base/50 border border-corp-secondary/50 rounded-lg text-center text-sm font-bold text-corp-accent py-1.5 focus:ring-2 focus:ring-corp-accent outline-none font-mono"
+                                    />
+                                    <span className="text-slate-500 font-bold">/</span>
+                                    <span className="text-slate-400 font-bold">{totalItems}</span>
+                                </div>
+                                <div className="h-4 w-px bg-corp-secondary/50 mx-1"></div>
+                                <div className="flex items-center space-x-1">
+                                    <button onClick={() => setPage(old => Math.max(old - 1, 1))} disabled={page === 1 || isLoading} className="p-2 bg-corp-base/50 border border-corp-secondary/50 rounded-lg hover:bg-corp-accent/40 transition-all text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed active:scale-95">
+                                        <ChevronLeft className="w-4 h-4" />
+                                    </button>
+                                    <button onClick={() => setPage(old => (data?.hasNextPage ? old + 1 : old))} disabled={!data?.hasNextPage || isLoading} className="p-2 bg-corp-base/50 border border-corp-secondary/50 rounded-lg hover:bg-corp-accent/40 transition-all text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed active:scale-95">
+                                        <ChevronRight className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                {/* Scrollable Table Area */}
-                <div className="flex-1 overflow-auto bg-corp-base/20 relative">
-                    {isLoading && !data ? (
+                <div className="flex-1 overflow-auto bg-corp-base/20 relative no-scrollbar">
+                    {isLoading && !data && (
                         <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-sm z-10">
                             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-corp-accent"></div>
                         </div>
-                    ) : null}
+                    )}
 
                     <table className="w-full text-left border-collapse">
-                        <thead className="sticky top-0 z-20 bg-corp-base/95 backdrop-blur-md shadow-sm">
+                        <thead className="sticky top-0 z-20 bg-corp-base shadow-sm ring-1 ring-white/5">
                             <tr className="border-b border-corp-secondary/30">
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-corp-base/50">Item (SKU)</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-corp-base/50">Description</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-corp-base/50">Barcode</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-corp-base/50">Brand</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center bg-corp-base/50">Sides</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-corp-base/50">Category</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center bg-corp-base/50">Unit Weight</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right bg-corp-base/50">Volume m3 (Unit)</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center bg-corp-base/50">Image</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right bg-corp-base/50">Actions</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-corp-base">Item (SKU)</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-corp-base">Description</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-corp-base">Barcode</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-corp-base">Brand</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center bg-corp-base">Sides</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-corp-base">Category</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center bg-corp-base">Unit Weight</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right bg-corp-base">Volume m3 (Unit)</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center bg-corp-base">Image</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right bg-corp-base">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-corp-secondary/20">

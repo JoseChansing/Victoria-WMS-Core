@@ -19,6 +19,8 @@ namespace Victoria.Inventory.Domain.Aggregates
     {
         public string Sku { get; set; } = string.Empty;
         public string ProductName { get; set; } = string.Empty;
+        public string Brand { get; set; } = string.Empty;
+        public string Sides { get; set; } = string.Empty;
         public int ExpectedQty { get; set; }
         public int ReceivedQty { get; set; }
         public long? OdooMoveId { get; set; } // Odoo ID (stock.move)

@@ -143,6 +143,18 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                 isUnitMode: receiveMode === 'UNIT'
             };
 
+            const resetForm = () => {
+                setScanValue('');
+                setQuantity(0);
+                setLpnCount(0);
+                setUnitsPerLpn(0);
+                setManualWeight(0);
+                setManualLength(0);
+                setManualWidth(0);
+                setManualHeight(0);
+                if (inputRef.current) inputRef.current.focus();
+            };
+
             if (receiveMode === 'BULK') {
                 params.lpnCount = Number(lpnCount);
                 params.unitsPerLpn = Number(unitsPerLpn);
@@ -178,9 +190,8 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
 
             const displayQty = receiveMode === 'UNIT' ? quantity : `${lpnCount} bultos x ${unitsPerLpn}`;
             setFeedback({ type: 'success', message: `Recibido: ${displayQty} de ${line.productName}` });
-            setScanValue('');
-            setQuantity(1);
-        } catch (error) {
+            resetForm();
+        } catch (error: any) {
             setFeedback({ type: 'error', message: 'Error al recibir. Intente nuevamente.' });
         }
     };
@@ -258,20 +269,22 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                                         <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-4 text-center">
                                             PHYSICAL ATTRIBUTES (OVERRIDE)
                                         </p>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div className="relative group">
-                                                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] ml-2">
+                                        <div className="grid grid-cols-1 gap-4">
+                                            <div className="relative group col-span-full">
+                                                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] ml-2 mb-2">
                                                     SCAN SKU OR EAN
                                                 </label>
-                                                <input
-                                                    ref={inputRef}
-                                                    type="text"
-                                                    value={scanValue}
-                                                    onChange={(e) => setScanValue(e.target.value)}
-                                                    className="w-full text-3xl p-6 bg-corp-base/60 border-2 border-corp-secondary rounded-3xl focus:ring-4 focus:ring-corp-accent/20 focus:border-corp-accent transition-all font-mono uppercase text-center text-white placeholder:text-slate-700 shadow-inner"
-                                                    placeholder="WAITING FOR SCAN..."
-                                                />
-                                                <ScanLine className="absolute left-6 top-1/2 -translate-y-1/2 w-8 h-8 text-slate-600 group-focus-within:text-blue-400 transition-colors animate-pulse" />
+                                                <div className="relative">
+                                                    <input
+                                                        ref={inputRef}
+                                                        type="text"
+                                                        value={scanValue}
+                                                        onChange={(e) => setScanValue(e.target.value)}
+                                                        className="w-full text-3xl pl-16 pr-6 py-6 bg-slate-900/60 border-2 border-corp-secondary rounded-3xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono uppercase text-white placeholder:text-slate-500 shadow-inner"
+                                                        placeholder="WAITING FOR SCAN..."
+                                                    />
+                                                    <ScanLine className="absolute left-6 top-1/2 -translate-y-1/2 w-8 h-8 text-slate-500 group-focus-within:text-blue-400 transition-colors animate-pulse" />
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -286,19 +299,19 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                                                     type="text"
                                                     value={quantity}
                                                     onChange={(e) => setQuantity(e.target.value)}
-                                                    className="w-full text-3xl p-5 bg-corp-base/40 border border-corp-secondary rounded-2xl focus:ring-2 focus:ring-corp-accent transition-all font-mono text-center text-white"
+                                                    className="w-full text-4xl py-6 bg-slate-900/60 border-2 border-corp-secondary rounded-3xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono text-center text-white font-black shadow-inner"
                                                     onFocus={(e) => e.target.select()}
                                                 />
                                             </div>
                                         ) : (
                                             <div className="grid grid-cols-2 gap-4 animate-in zoom-in duration-300">
-                                                <div className="relative">
-                                                    <label className="absolute -top-2 left-2 px-1 bg-corp-nav text-[10px] font-bold text-slate-400">LPN COUNT</label>
+                                                <div>
+                                                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-2 text-center tracking-widest">LPN COUNT</label>
                                                     <input
                                                         type="text"
                                                         value={lpnCount}
                                                         onChange={(e) => setLpnCount(e.target.value)}
-                                                        className="w-full text-3xl p-5 bg-corp-base/40 border border-corp-secondary rounded-2xl focus:ring-2 focus:ring-corp-accent transition-all font-mono text-center text-white"
+                                                        className="w-full text-4xl py-6 bg-slate-900/60 border-2 border-corp-secondary rounded-3xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono text-center text-white font-black shadow-inner"
                                                         onFocus={(e) => e.target.select()}
                                                     />
                                                 </div>
@@ -308,7 +321,7 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                                                         type="text"
                                                         value={unitsPerLpn}
                                                         onChange={(e) => setUnitsPerLpn(e.target.value)}
-                                                        className="w-full text-3xl p-5 bg-corp-base/40 border border-corp-secondary rounded-2xl focus:ring-2 focus:ring-corp-accent transition-all font-mono text-center text-white"
+                                                        className="w-full text-4xl py-6 bg-slate-900/60 border-2 border-corp-secondary rounded-3xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono text-center text-white font-black shadow-inner"
                                                         onFocus={(e) => e.target.select()}
                                                     />
                                                 </div>
@@ -471,7 +484,11 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                                             <Package className="w-10 h-10" />
                                         </div>
                                         <div>
-                                            <h3 className="text-3xl font-black tracking-tighter text-white">{selectedLine.productName}</h3>
+                                            <h3 className="text-3xl font-black tracking-tighter text-white flex flex-wrap items-baseline gap-2">
+                                                <span className="text-corp-accent">{selectedLine.brand}</span>
+                                                <span className="opacity-90">{selectedLine.productName}</span>
+                                                <span className="text-corp-accent">{selectedLine.sides}</span>
+                                            </h3>
                                             <div className="flex items-center space-x-3 mt-2">
                                                 <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">{selectedLine.sku}</p>
                                                 <span className="text-slate-700">|</span>
@@ -539,7 +556,15 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode }) => {
                                                                 </div>
                                                             )}
                                                         </div>
-                                                        <p className="text-xs text-slate-400 font-bold uppercase truncate max-w-[250px]">{line.productName}</p>
+                                                        <div className="text-[10px] text-slate-400 font-bold uppercase flex items-center gap-1.5 min-w-0 max-w-[400px]">
+                                                            <span className="px-1.5 py-0.5 bg-corp-base/40 rounded border border-corp-secondary/30 text-blue-400 shrink-0">
+                                                                {line.brand || 'NO BRAND'}
+                                                            </span>
+                                                            <span className="truncate opacity-80">{line.productName}</span>
+                                                            <span className="px-1.5 py-0.5 bg-corp-base/40 rounded border border-corp-secondary/30 text-blue-400 shrink-0">
+                                                                {line.sides || 'N/A'}
+                                                            </span>
+                                                        </div>
                                                     </div>
                                                 </div>
                                                 <div className="text-right space-y-2">

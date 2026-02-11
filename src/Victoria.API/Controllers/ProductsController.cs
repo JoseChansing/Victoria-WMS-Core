@@ -8,6 +8,7 @@ using Marten;
 using Marten.Linq;
 using Victoria.Inventory.Domain.Aggregates;
 using Victoria.Core.Interfaces;
+using Victoria.Core.Models;
 
 using Victoria.Infrastructure.Integration.Odoo;
 
@@ -17,14 +18,23 @@ namespace Victoria.API.Controllers
     [Route("api/v1/products")]
     public class ProductsController : ControllerBase
     {
-        private readonly IDocumentSession _session; // Changed to IDocumentSession for Delete capability
+        private readonly IDocumentSession _session; 
         private readonly IOdooRpcClient _odooClient;
+        private readonly IProductService _productSync;
+        private readonly IInboundService _inboundSync;
         private readonly ILogger<ProductsController> _logger;
 
-        public ProductsController(IDocumentSession session, IOdooRpcClient odooClient, ILogger<ProductsController> logger)
+        public ProductsController(
+            IDocumentSession session, 
+            IOdooRpcClient odooClient, 
+            IProductService productSync,
+            IInboundService inboundSync,
+            ILogger<ProductsController> logger)
         {
             _session = session;
             _odooClient = odooClient;
+            _productSync = productSync;
+            _inboundSync = inboundSync;
             _logger = logger;
         }
 
@@ -32,9 +42,12 @@ namespace Victoria.API.Controllers
         public async Task<IActionResult> GetProducts(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 50,
-            [FromQuery] string? search = null)
+            [FromQuery] string? search = null,
+            [FromQuery] string? brand = null,
+            [FromQuery] string? category = null,
+            [FromQuery] bool? hasImage = null)
         {
-            _logger.LogInformation($"[API] GetProducts request. Page: {page}, Size: {pageSize}, Search: '{search}'");
+            _logger.LogInformation($"[API] GetProducts request. Page: {page}, Size: {pageSize}, Filter: B:{brand} C:{category}");
             try 
             {
                 // Basic validation
@@ -44,6 +57,16 @@ namespace Victoria.API.Controllers
 
                 QueryStatistics stats = null;
                 var query = _session.Query<Product>().AsQueryable();
+
+                // Apply filters (Free Text Search)
+                if (!string.IsNullOrWhiteSpace(brand))
+                    query = query.Where(x => x.Brand.Contains(brand, StringComparison.InvariantCultureIgnoreCase));
+
+                if (!string.IsNullOrWhiteSpace(category))
+                    query = query.Where(x => x.Category.Contains(category, StringComparison.InvariantCultureIgnoreCase));
+
+                if (hasImage.HasValue)
+                    query = query.Where(x => x.HasImage == hasImage.Value);
 
                 // Apply search filter if provided
                 if (!string.IsNullOrWhiteSpace(search))
@@ -89,7 +112,10 @@ namespace Victoria.API.Controllers
             }
         }
 
-        [HttpDelete("{sku}")]
+
+
+        // Constraint :minlength(5) ensures 'meta' (4 chars) is never caught here
+        [HttpDelete("{sku:minlength(5)}")]
         public async Task<IActionResult> DeleteProduct(string sku)
         {
             // 1. Validación Local: Movimientos de Inventario
@@ -115,7 +141,7 @@ namespace Victoria.API.Controllers
                 };
                 
                 var fields = new string[] { "id", "display_name", "active" }; // Request 'active' for debugging if needed
-                var odooProducts = await _odooClient.SearchAndReadAsync<OdooProductDto>("product.product", domain, fields);
+                var odooProducts = await _odooClient.SearchAndReadAsync<Victoria.Core.Models.OdooProductDto>("product.product", domain, fields);
 
                 if (odooProducts != null && odooProducts.Count > 0)
                 {

@@ -9,37 +9,11 @@ using Victoria.Inventory.Domain.Aggregates;
 using Victoria.Inventory.Domain.ValueObjects;
 using System.Linq;
 using System.Text.Json.Serialization;
+using Victoria.Core.Models;
 
 namespace Victoria.Infrastructure.Integration.Odoo
 {
-    // DTO Sucio de Odoo
-    public class OdooProductDto
-    {
-        public int Id { get; set; }
-        public int Company_Id { get; set; }
-        public string? Display_Name { get; set; }
-        public string? Default_Code { get; set; }
-        public double Weight { get; set; }
-        public string? Barcode { get; set; }
-        public string? Description { get; set; }
-        public string? Image_1920 { get; set; }
-        public string? Image_128 { get; set; }
-        public string? Type { get; set; } 
-        public bool Active { get; set; }
-        public object? Categ_Id { get; set; }
-        public string? Write_Date { get; set; }
-        
-        public object? brand_id { get; set; }
-        public string? x_lados { get; set; } 
-        
-        [JsonPropertyName("product_template_attribute_value_ids")]
-        public object? product_template_attribute_value_ids { get; set; }
-
-        [JsonPropertyName("product_template_variant_value_ids")]
-        public object? product_template_variant_value_ids { get; set; }
-    }
-
-    public class ProductSyncService
+    public class ProductSyncService : IProductService
     {
         private readonly IDocumentSession _session;
         private readonly ILogger<ProductSyncService> _logger;
@@ -60,12 +34,12 @@ namespace Victoria.Infrastructure.Integration.Odoo
             // INCREMENTAL SYNC LOGIC
             if (syncState.LastSyncTimestamp != DateTime.MinValue)
             {
-                // Safety margin: 5 minutes overlap to avoid clock skew issues
-                var safeTimestamp = syncState.LastSyncTimestamp.AddMinutes(-5);
+                // Safety margin: 15 minutes overlap to avoid clock skew issues
+                var safeTimestamp = syncState.LastSyncTimestamp.AddMinutes(-15);
                 var odooDateFormat = safeTimestamp.ToString("yyyy-MM-dd HH:mm:ss");
                 
                 domainList.Add(new object[] { "write_date", ">=", odooDateFormat });
-                _logger.LogInformation($"[INCREMENTAL-SYNC] Fetching products modified since {odooDateFormat} (Safety Margin applied)");
+                _logger.LogInformation($"[INCREMENTAL-SYNC] Fetching products modified since {odooDateFormat} (Safety Margin 15m applied)");
             }
             else
             {
@@ -233,7 +207,12 @@ namespace Victoria.Infrastructure.Integration.Odoo
             }
         }
 
-        public async Task SyncProduct(OdooProductDto odooProduct, Dictionary<long, (string AttributeName, string ValueName)> attributeMap = null)
+        public async Task SyncProduct(OdooProductDto odooProduct)
+        {
+            await SyncProduct(odooProduct, null);
+        }
+
+        public async Task SyncProduct(OdooProductDto odooProduct, Dictionary<long, (string AttributeName, string ValueName)>? attributeMap)
         {
             string skuCode = (odooProduct.Default_Code ?? "").ToUpper().Trim();
 

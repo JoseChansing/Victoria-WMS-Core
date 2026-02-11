@@ -11,6 +11,8 @@ using Victoria.Infrastructure.Redis;
 using Victoria.Inventory.Application.Commands;
 using Victoria.Inventory.Domain.Services;
 using Victoria.Infrastructure.Projections;
+using Victoria.Core.Models;
+using Weasel.Core;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,6 +33,11 @@ builder.Services.AddMarten(opts =>
     // Aseguramos que NO haya particionamiento por tenant lógico
     opts.Events.TenancyStyle = Marten.Storage.TenancyStyle.Single; 
     opts.Events.StreamIdentity = Marten.Events.StreamIdentity.AsString;
+
+    opts.Schema.For<Victoria.Inventory.Domain.Aggregates.Product>().Duplicate(x => x.Brand, pgType: "varchar", configure: idx => idx.Name = "idx_product_brand");
+    opts.Schema.For<Victoria.Inventory.Domain.Aggregates.Product>().Duplicate(x => x.Category, pgType: "varchar", configure: idx => idx.Name = "idx_product_category");
+
+    opts.AutoCreateSchemaObjects = AutoCreate.All; 
 
     // Explicit registration to avoid discovery issues in background tasks
     opts.RegisterDocumentType<Victoria.Inventory.Domain.Aggregates.Location>();
@@ -74,11 +81,15 @@ builder.Services.AddScoped<PackingHandler>();
 builder.Services.AddScoped<Victoria.Inventory.Application.Services.DispatchService>();
 builder.Services.AddScoped<Victoria.Inventory.Application.Services.InventorySyncService>();
 
-// 5. Odoo Integration Mix (ACL & RPC)
+// 5. Odoo Integration Mix (DI Stabilization)
 builder.Services.AddSingleton<Victoria.Core.Messaging.IMessageBus, Victoria.Infrastructure.Messaging.InMemoryMessageBus>();
+
+// Typed Client Registration (Senior Best Practice)
 builder.Services.AddHttpClient<Victoria.Core.Interfaces.IOdooRpcClient, Victoria.Infrastructure.Integration.Odoo.OdooRpcClient>();
-builder.Services.AddScoped<Victoria.Infrastructure.Integration.Odoo.ProductSyncService>();
-builder.Services.AddScoped<Victoria.Infrastructure.Integration.Odoo.InboundOrderSyncService>();
+
+// Explicit Scoped Registrations for Persistence/Sync
+builder.Services.AddScoped<Victoria.Core.Interfaces.IProductService, Victoria.Infrastructure.Integration.Odoo.ProductSyncService>();
+builder.Services.AddScoped<Victoria.Core.Interfaces.IInboundService, Victoria.Infrastructure.Integration.Odoo.InboundOrderSyncService>();
 builder.Services.AddScoped<Victoria.Infrastructure.Integration.Odoo.OdooFeedbackService>();
 builder.Services.AddScoped<Victoria.Infrastructure.Integration.Odoo.OdooFeedbackConsumer>();
 builder.Services.AddScoped<Victoria.Infrastructure.Integration.Odoo.IOdooAdapter, Victoria.Infrastructure.Integration.Odoo.OdooAdapter>();
@@ -98,7 +109,7 @@ builder.Services.AddHostedService<Victoria.Infrastructure.Services.InitialDataLo
 // Worker Recurrente (Cada 5 min)
 builder.Services.AddHostedService<Victoria.Infrastructure.Services.RecurringSyncWorker>();
 
-// 5a. CORS Policy (Global Open for Dev)
+// 5a. CORS Policy (System Stabilization - Allow everything for local dev)
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
@@ -106,6 +117,8 @@ builder.Services.AddCors(options =>
         policy.AllowAnyOrigin()
               .AllowAnyMethod()
               .AllowAnyHeader();
+        // Note: Cannot use AllowAnyOrigin with AllowCredentials.
+        // If credentials are needed, use SetIsOriginAllowed(_ => true)
     });
 });
 
@@ -134,9 +147,10 @@ if (app.Environment.IsDevelopment())
 
 // app.UseHttpsRedirection();
 
-// CORS Middleware (Must be before Auth)
+app.UseRouting();
 app.UseCors("AllowFrontend");
 
+app.UseAuthentication(); // Required for Bearer token validation even if not strictly enforced yet
 app.UseAuthorization();
 app.MapControllers();
 

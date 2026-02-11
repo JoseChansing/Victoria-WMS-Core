@@ -29,20 +29,20 @@ services:
     depends_on:
       - postgres
 
-  victoria-worker:
-    build:
-      context: .
-      dockerfile: src/Victoria.Worker/Dockerfile
-    container_name: victoria-worker
-    restart: unless-stopped
-    env_file: .env.production
-    environment:
-      - ASPNETCORE_ENVIRONMENT=Development
-      - POSTGRES_CONNECTION=Host=postgres;Database=victoria_wms;Username=vicky_admin;Password=vicky_password
-      - REDIS_CONNECTION=redis:6379
-    depends_on:
-      - postgres
-      - redis
+  # victoria-worker:
+  #   build:
+  #     context: .
+  #     dockerfile: src/Victoria.Worker/Dockerfile
+  #   container_name: victoria-worker
+  #   restart: unless-stopped
+  #   env_file: .env.production
+  #   environment:
+  #     - ASPNETCORE_ENVIRONMENT=Development
+  #     - POSTGRES_CONNECTION=Host=postgres;Database=victoria_wms;Username=vicky_admin;Password=vicky_password
+  #     - REDIS_CONNECTION=redis:6379
+  #   depends_on:
+  #     - postgres
+  #     - redis
 
 volumes:
   postgres_data:

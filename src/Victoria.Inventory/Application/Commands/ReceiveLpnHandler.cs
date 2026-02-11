@@ -95,11 +95,13 @@ namespace Victoria.Inventory.Application.Commands
                 // Final Check: If SKU is still empty/null, use "UNKNOWN" to avoid crashing Create
                 if (string.IsNullOrEmpty(skuValue)) skuValue = "UNKNOWN";
 
+                // Load product ONCE for all uses (attributes, validation, brand/barcode)
+                var product = await _session.LoadAsync<Product>(skuValue);
+
                 // 2. Physical Attributes Inheritance
                 var physicalAttrs = command.ManualDimensions;
                 if (physicalAttrs == null && !string.IsNullOrEmpty(skuValue))
                 {
-                    var product = await _session.LoadAsync<Product>(skuValue);
                     physicalAttrs = product?.PhysicalAttributes ?? PhysicalAttributes.Empty();
                 }
 
@@ -120,7 +122,6 @@ namespace Victoria.Inventory.Application.Commands
                     // STEP 1.5: Golden Sample Validation (Photo Requirement)
                     if (!isStationSample && initialLocation != "PHOTO-STATION")
                     {
-                        var product = await _session.LoadAsync<Product>(skuValue);
                         if (product != null && !product.HasImage)
                         {
                             var order = await _session.LoadAsync<InboundOrder>(command.OrderId);
@@ -167,7 +168,10 @@ namespace Victoria.Inventory.Application.Commands
                         unitsPerLpn, 
                         physicalAttrs ?? PhysicalAttributes.Empty(),
                         command.UserId, 
-                        command.StationId);
+                        command.StationId,
+                        product?.Brand ?? "",
+                        product?.Sides ?? "",
+                        product?.Barcode ?? "");
 
                     lpn.Putaway(initialLocation, "SYS", "RECEPTION"); // Set initial dock location
                     

@@ -13,7 +13,7 @@ namespace Victoria.Infrastructure.Services
     {
         private readonly IServiceProvider _serviceProvider;
         private readonly ILogger<RecurringSyncWorker> _logger;
-        private readonly TimeSpan _interval = TimeSpan.FromMinutes(5); // 5 Minutes Interval
+        private readonly TimeSpan _interval = TimeSpan.FromMinutes(1); // 1 Minute Interval
 
         public RecurringSyncWorker(IServiceProvider serviceProvider, ILogger<RecurringSyncWorker> logger)
         {
@@ -36,11 +36,17 @@ namespace Victoria.Infrastructure.Services
                     
                     using (var scope = _serviceProvider.CreateScope())
                     {
-                        var productService = scope.ServiceProvider.GetRequiredService<ProductSyncService>();
+                        var productService = scope.ServiceProvider.GetRequiredService<IProductService>();
+                        var inboundService = scope.ServiceProvider.GetRequiredService<IInboundService>();
                         var odooClient = scope.ServiceProvider.GetRequiredService<IOdooRpcClient>();
 
-                        int count = await productService.SyncAllAsync(odooClient);
-                        _logger.LogInformation($"[WORKER] Incremental sync finished. Processed {count} items.");
+                        _logger.LogInformation("[WORKER] Syncing Products...");
+                        int prodCount = await productService.SyncAllAsync(odooClient);
+                        
+                        _logger.LogInformation("[WORKER] Syncing Inbound Orders...");
+                        int orderCount = await inboundService.SyncAllAsync(odooClient);
+
+                        _logger.LogInformation($"[WORKER] Incremental sync finished. Products: {prodCount}, Orders: {orderCount}.");
                     }
                 }
                 catch (Exception ex)

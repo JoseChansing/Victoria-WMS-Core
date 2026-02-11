@@ -9,6 +9,7 @@ using Victoria.Inventory.Domain.Aggregates;
 using Victoria.Inventory.Domain.ValueObjects;
 using Victoria.Inventory.Application.Commands;
 using Victoria.Core.Interfaces;
+using Victoria.Core.Models;
 using Victoria.Infrastructure.Integration.Odoo;
 using Microsoft.Extensions.Logging;
 
@@ -20,8 +21,8 @@ namespace Victoria.API.Controllers
     {
         private readonly IDocumentSession _session;
         private readonly ReceiveLpnHandler _handler;
-        private readonly ProductSyncService _productSync;
-        private readonly InboundOrderSyncService _orderSync;
+        private readonly IProductService _productSync;
+        private readonly IInboundService _orderSync;
         private readonly IOdooRpcClient _odooClient;
         private readonly IOdooAdapter _odooAdapter;
         private readonly ILogger<InboundController> _logger;
@@ -29,8 +30,8 @@ namespace Victoria.API.Controllers
         public InboundController(
             IDocumentSession session, 
             ReceiveLpnHandler handler,
-            ProductSyncService productSync,
-            InboundOrderSyncService orderSync,
+            IProductService productSync,
+            IInboundService orderSync,
             IOdooRpcClient odooClient,
             IOdooAdapter odooAdapter,
             ILogger<InboundController> logger)
@@ -92,6 +93,8 @@ namespace Victoria.API.Controllers
                         l.Sku,
                         // e CRITICAL FIX: Use current product name from master, fallback to stored name
                         ProductName = productDict.TryGetValue(l.Sku, out var p) ? p.Name : l.ProductName,
+                        Brand = productDict.TryGetValue(l.Sku, out var pb) ? pb.Brand : (l.Brand ?? ""),
+                        Sides = productDict.TryGetValue(l.Sku, out var ps) ? ps.Sides : (l.Sides ?? ""),
                         l.ExpectedQty,
                         l.ReceivedQty,
                         RequiresSample = productDict.TryGetValue(l.Sku, out var pr) ? !pr.HasImage : true,

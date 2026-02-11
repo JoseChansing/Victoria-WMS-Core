@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Victoria.Infrastructure.Integration.Odoo;
 using Victoria.Inventory.Domain.Aggregates;
 using Victoria.Core.Interfaces;
+using Victoria.Core.Models;
 using Marten;
 using Npgsql;
 using Microsoft.Extensions.Configuration;
@@ -128,8 +129,8 @@ namespace Victoria.Infrastructure.Services
                 {
                     var session = scope.ServiceProvider.GetRequiredService<Marten.IDocumentSession>(); // Inject Session
                     var odooClient = scope.ServiceProvider.GetRequiredService<IOdooRpcClient>();
-                    var inboundService = scope.ServiceProvider.GetRequiredService<InboundOrderSyncService>();
-                    var productService = scope.ServiceProvider.GetRequiredService<ProductSyncService>();
+                    var inboundService = scope.ServiceProvider.GetRequiredService<IInboundService>();
+                    var productService = scope.ServiceProvider.GetRequiredService<IProductService>();
 
                     /* 
                     // 2.1 RESET STATE (FORCE FULL SYNC - TOTAL REACTIVATION)

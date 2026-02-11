@@ -26,13 +26,16 @@ namespace Victoria.Inventory.Domain.Aggregates
         [JsonProperty] public string? CurrentLocationId { get; private set; }
         [JsonProperty] public string? SelectedOrderId { get; private set; }
         [JsonProperty] public string? ParentLpnId { get; private set; }
+        [JsonProperty] public string Brand { get; private set; } = "";
+        [JsonProperty] public string Sides { get; private set; } = "";
+        [JsonProperty] public string ProductBarcode { get; private set; } = "";
         [JsonProperty] public DateTime CreatedAt { get; private set; }
         
         private readonly List<IDomainEvent> _changes = new();
         public IReadOnlyCollection<IDomainEvent> Changes => _changes.AsReadOnly();
 
         [JsonConstructor]
-        private Lpn(string id, LpnCode code, Sku sku, LpnType type, int quantity, PhysicalAttributes physicalAttributes, LpnStatus status, string? currentLocationId, string? selectedOrderId, string? parentLpnId, DateTime createdAt)
+        private Lpn(string id, LpnCode code, Sku sku, LpnType type, int quantity, PhysicalAttributes physicalAttributes, LpnStatus status, string? currentLocationId, string? selectedOrderId, string? parentLpnId, DateTime createdAt, string brand, string sides, string productBarcode)
         {
             Id = id;
             Code = code;
@@ -45,16 +48,19 @@ namespace Victoria.Inventory.Domain.Aggregates
             SelectedOrderId = selectedOrderId;
             ParentLpnId = parentLpnId;
             CreatedAt = createdAt;
+            Brand = brand;
+            Sides = sides;
+            ProductBarcode = productBarcode;
         }
 
         private Lpn() { } // Marten fallback
 
-        public static Lpn Provision(string id, LpnCode code, Sku sku, LpnType type, int quantity, PhysicalAttributes physicalAttributes, string userId, string stationId)
+        public static Lpn Provision(string id, LpnCode code, Sku sku, LpnType type, int quantity, PhysicalAttributes physicalAttributes, string userId, string stationId, string brand = "", string sides = "", string productBarcode = "")
         {
             if (sku == null) throw new ArgumentException("Un LPN no puede existir sin un SKU asociado.");
 
             var lpn = new Lpn();
-            var @event = new LpnCreated(id, code.Value, sku.Value, type, quantity, physicalAttributes, DateTime.UtcNow, userId, stationId);
+            var @event = new LpnCreated(id, code.Value, sku.Value, type, quantity, physicalAttributes, DateTime.UtcNow, userId, stationId, brand, sides, productBarcode);
             lpn.Apply(@event);
             lpn._changes.Add(@event);
             return lpn;
@@ -173,6 +179,9 @@ namespace Victoria.Inventory.Domain.Aggregates
             PhysicalAttributes = e.PhysicalAttributes;
             Status = LpnStatus.Created;
             CreatedAt = e.OccurredOn;
+            Brand = e.Brand;
+            Sides = e.Sides;
+            ProductBarcode = e.ProductBarcode;
         }
 
         public void Apply(LpnReceived e)

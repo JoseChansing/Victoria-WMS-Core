@@ -5,29 +5,12 @@ using System.Text.Json;
 using System.Collections.Generic;
 using System.Linq;
 using Victoria.Core.Interfaces;
+using Victoria.Core.Models;
 using Victoria.Inventory.Domain.Aggregates;
-using Victoria.Inventory.Domain.ValueObjects;
 
 namespace Victoria.Infrastructure.Integration.Odoo
 {
-    public class OdooOrderLineDto
-    {
-        public long Id { get; set; }
-        public int Product_Id { get; set; }
-        public double Product_Uom_Qty { get; set; }
-    }
-
-    public class OdooOrderDto
-    {
-        public int Id { get; set; }
-        public string Name { get; set; } = string.Empty; // OrderNumber
-        public int Company_Id { get; set; }
-        public string Picking_Type_Code { get; set; } = string.Empty;
-        public string Write_Date { get; set; } = string.Empty;
-        public List<OdooOrderLineDto> Lines { get; set; } = new();
-    }
-
-    public class InboundOrderSyncService
+    public class InboundOrderSyncService : IInboundService
     {
         private readonly IDocumentSession _session;
         private readonly ILogger<InboundOrderSyncService> _logger;
@@ -97,6 +80,28 @@ namespace Victoria.Infrastructure.Integration.Odoo
             return processed;
         }
 
+        private long ExtractProductId(object? productIdData)
+        {
+            if (productIdData == null) return 0;
+            if (productIdData is System.Text.Json.JsonElement elem)
+            {
+                if (elem.ValueKind == System.Text.Json.JsonValueKind.Array && elem.GetArrayLength() > 0)
+                    return elem[0].TryGetInt64(out var val) ? val : 0;
+                if (elem.ValueKind == System.Text.Json.JsonValueKind.Number)
+                    return elem.GetInt64();
+            }
+            if (productIdData is System.Collections.IEnumerable enumerable && !(productIdData is string))
+            {
+                foreach (var item in enumerable)
+                {
+                    if (long.TryParse(item?.ToString(), out var lVal)) return lVal;
+                    break;
+                }
+            }
+            if (long.TryParse(productIdData.ToString(), out var directVal)) return directVal;
+            return 0;
+        }
+
         public async Task SyncPicking(OdooOrderDto odooPicking, string type)
         {
             _logger?.LogInformation("[OdooSync-Marten] Persisting {Type} Picking: {Ref}", type, odooPicking.Name);
@@ -115,11 +120,13 @@ namespace Victoria.Infrastructure.Integration.Odoo
             var lines = new List<InboundLine>();
             foreach (var l in (odooPicking.Lines ?? new()))
             {
+                long productId = ExtractProductId(l.Product_Id);
+
                 // BUSCAR PRODUCTO PARA OBTENER SKU
                 var product = await _session.Query<Product>()
-                    .Where(x => x.OdooId == l.Product_Id)
+                    .Where(x => x.OdooId == productId)
                     .FirstOrDefaultAsync();
-
+                
                 // 2. Find local progress: Try MoveId first, then SKU as fallback
                 var existingLine = existingOrder?.Lines.FirstOrDefault(x => x.OdooMoveId == l.Id)
                                 ?? existingOrder?.Lines.FirstOrDefault(x => x.Sku == product?.Sku);
@@ -144,6 +151,8 @@ namespace Victoria.Infrastructure.Integration.Odoo
                 if (product != null)
                 {
                     line.ProductName = product.Name;
+                    line.Brand = product.Brand ?? "";
+                    line.Sides = product.Sides ?? "";
                     line.ImageSource = product.ImageSource;
                     line.Dimensions = product.PhysicalAttributes;
                 }

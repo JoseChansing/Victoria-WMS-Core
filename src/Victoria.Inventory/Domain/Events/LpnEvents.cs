@@ -13,7 +13,10 @@ namespace Victoria.Inventory.Domain.Events
         Victoria.Inventory.Domain.ValueObjects.PhysicalAttributes PhysicalAttributes,
         DateTime OccurredOn,
         string CreatedBy,
-        string StationId
+        string StationId,
+        string Brand = "",
+        string Sides = "",
+        string ProductBarcode = ""
     ) : IDomainEvent;
 
     public record LpnReceived(
