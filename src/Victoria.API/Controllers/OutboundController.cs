@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Victoria.Inventory.Application.Services;
+using Victoria.Core.Interfaces;
 
 namespace Victoria.API.Controllers
 {
@@ -9,16 +10,19 @@ namespace Victoria.API.Controllers
     [Route("api/v1/outbound")]
     public class OutboundController : ControllerBase
     {
-        private readonly OutboundOrderSyncService _syncService;
+        private readonly IOutboundService _syncService;
+        private readonly IOdooRpcClient _odooClient;
         private readonly WaveService _waveService;
         private readonly TaskService _taskService;
 
         public OutboundController(
-            OutboundOrderSyncService syncService,
+            IOutboundService syncService,
+            IOdooRpcClient odooClient,
             WaveService waveService,
             TaskService taskService)
         {
             _syncService = syncService;
+            _odooClient = odooClient;
             _waveService = waveService;
             _taskService = taskService;
         }
@@ -28,7 +32,7 @@ namespace Victoria.API.Controllers
         {
             try
             {
-                var count = await _syncService.SyncOrdersAsync();
+                var count = await _syncService.SyncAllAsync(_odooClient);
                 return Ok(new { message = $"Synced {count} outbound orders from Odoo." });
             }
             catch (Exception ex)
@@ -38,7 +42,7 @@ namespace Victoria.API.Controllers
         }
 
         [HttpPost("wave")]
-        public async Task<IActionResult> AllocateWave([FromBody] Guid[] orderIds)
+        public async Task<IActionResult> AllocateWave([FromBody] string[] orderIds)
         {
             try
             {

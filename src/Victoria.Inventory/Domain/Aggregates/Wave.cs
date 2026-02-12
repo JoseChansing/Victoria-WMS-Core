@@ -20,8 +20,8 @@ namespace Victoria.Inventory.Domain.Aggregates
         public DateTime CreatedAt { get; private set; }
         public DateTime? ReleasedAt { get; private set; }
         
-        private readonly List<Guid> _orderIds = new List<Guid>();
-        public IReadOnlyCollection<Guid> OrderIds => _orderIds.AsReadOnly();
+        private readonly List<string> _orderIds = new List<string>();
+        public IReadOnlyCollection<string> OrderIds => _orderIds.AsReadOnly();
 
         public Wave(string waveNumber)
         {
@@ -31,7 +31,7 @@ namespace Victoria.Inventory.Domain.Aggregates
             CreatedAt = DateTime.UtcNow;
         }
 
-        public void AddOrder(Guid orderId)
+        public void AddOrder(string orderId)
         {
             if (Status != WaveStatus.Planned)
                 throw new InvalidOperationException("Cannot add orders to a wave that is already processed.");

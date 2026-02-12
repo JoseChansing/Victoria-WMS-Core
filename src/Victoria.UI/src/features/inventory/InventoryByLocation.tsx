@@ -45,8 +45,21 @@ export const InventoryByLocation = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const { data } = await api.get('/inventory/locations');
-            setLocations(data);
+            const { data } = await api.get('/inventory/by-location');
+            // Data structure: { locationId, totalQty, lpnCount, items: [ { sku, quantity } ] }
+            const flattened: FlattenedInventory[] = data.flatMap((loc: any) =>
+                loc.items.map((item: any) => ({
+                    locationId: loc.locationId,
+                    locationType: 'Almacenamiento',
+                    lpnId: item.quantity === loc.totalQty && loc.lpnCount === 1 ? 'PALLET' : 'LOOSE',
+                    sku: item.sku,
+                    description: item.description || '',
+                    quantity: item.quantity,
+                    allocatedQuantity: 0,
+                    status: 2
+                }))
+            );
+            setLocations(flattened as any); // Adapt manually to avoid major refactor
         } catch (error) {
             console.error('Error fetching inventory by location:', error);
         } finally {
@@ -58,13 +71,7 @@ export const InventoryByLocation = () => {
         fetchData();
     }, []);
 
-    const flattenedData: FlattenedInventory[] = locations.flatMap(loc =>
-        loc.lpns.map(lpn => ({
-            locationId: loc.id,
-            locationType: loc.locationType || 'Almacenamiento',
-            ...lpn
-        }))
-    );
+    const flattenedData: FlattenedInventory[] = Array.isArray(locations) ? locations as any : [];
 
     const filteredData = flattenedData.filter(item =>
         item.sku.toLowerCase().includes(search.toLowerCase()) ||

@@ -28,7 +28,12 @@ namespace Victoria.Infrastructure.Integration.Odoo
             // 1. Get Sync State
             var syncState = await _session.LoadAsync<SyncState>("ProductSync") ?? new SyncState { Id = "ProductSync", EntityType = "Product" };
             var domainList = new List<object[]> {
-                new object[] { "active", "in", new object[] { true, false } }
+                new object[] { "active", "=", true },
+                new object[] { "categ_id.name", "in", new string[] { 
+                    "AMORTIGUADORES", "ANILLOS DE PISTON", "ELECTROVENTILADORES", 
+                    "SOPORTES DE MOTOR", "MULETAS", "RADIADORES", "CONDENSADORES",
+                    "PUNTAS DE FLECHA", "BASES DE AMORTIGUADOR"
+                } }
             };
 
             // INCREMENTAL SYNC LOGIC
@@ -51,7 +56,8 @@ namespace Victoria.Infrastructure.Integration.Odoo
             var fields = new string[] { 
                 "id", "display_name", "default_code", "weight", "barcode", "description",
                 "image_128", "image_1920", "type", "active", "write_date", "categ_id",
-                "brand_id", "product_template_attribute_value_ids", "product_template_variant_value_ids"
+                "brand_id", "product_template_attribute_value_ids", "product_template_variant_value_ids",
+                "bulk_ids"
             };
 
             int batchSize = 50;
@@ -137,12 +143,59 @@ namespace Victoria.Infrastructure.Integration.Odoo
                     }
                 }
 
+                // 3.5 Fetch Packaging Details for this batch
+                var allPackagingIds = new HashSet<long>();
+                var allBulkIds = new HashSet<long>();
+                foreach (var p in odooProducts)
+                {
+                    ExtractAttributeIds(p.packaging_ids, allPackagingIds);
+                    ExtractAttributeIds(p.bulk_ids, allBulkIds);
+                }
+
+                var packagingMap = new Dictionary<long, OdooPackagingDto>();
+                
+                // Fetch Standard Packaging
+                if (allPackagingIds.Count > 0)
+                {
+                    var packIds = allPackagingIds.Select(id => (object)id).ToArray();
+                    var packDomain = new object[][] { new object[] { "id", "in", packIds } };
+                    var packFields = new string[] { "id", "name", "qty", "packaging_length", "packaging_width", "packaging_height", "max_weight" };
+
+                    try 
+                    {
+                        var packings = await odooClient.SearchAndReadAsync<OdooPackagingDto>("product.packaging", packDomain, packFields);
+                        if (packings != null)
+                        {
+                            foreach (var pkg in packings) packagingMap[pkg.Id] = pkg;
+                        }
+                    }
+                    catch (Exception ex) { _logger.LogError(ex, "[MASSIVE-SYNC] Error fetching packaging for batch."); }
+                }
+
+                // Fetch Custom Bultos (stock.move.bulk)
+                if (allBulkIds.Count > 0)
+                {
+                    var bulkIds = allBulkIds.Select(id => (object)id).ToArray();
+                    var bulkDomain = new object[][] { new object[] { "id", "in", bulkIds } };
+                    var bulkFields = new string[] { "id", "name", "qty_bulk", "l_cm", "w_cm", "h_cm", "weight" };
+
+                    try 
+                    {
+                        var bulks = await odooClient.SearchAndReadAsync<OdooPackagingDto>("stock.move.bulk", bulkDomain, bulkFields);
+                        if (bulks != null)
+                        {
+                            foreach (var b in bulks) packagingMap[b.Id] = b;
+                        }
+                    }
+                    catch (Exception ex) { _logger.LogError(ex, "[MASSIVE-SYNC] Error fetching bulk_ids for batch."); }
+                }
+
                 // 4. Update products in this batch
                 foreach (var p in odooProducts)
                 {
                     try 
                     {
-                        await SyncProduct(p, attributeValueMap);
+                        await SyncProduct(p, attributeValueMap, packagingMap);
                         totalProcessed++;
                     }
                     catch (Exception ex)
@@ -209,10 +262,10 @@ namespace Victoria.Infrastructure.Integration.Odoo
 
         public async Task SyncProduct(OdooProductDto odooProduct)
         {
-            await SyncProduct(odooProduct, null);
+            await SyncProduct(odooProduct, null, null);
         }
 
-        public async Task SyncProduct(OdooProductDto odooProduct, Dictionary<long, (string AttributeName, string ValueName)>? attributeMap)
+        public async Task SyncProduct(OdooProductDto odooProduct, Dictionary<long, (string AttributeName, string ValueName)>? attributeMap, Dictionary<long, OdooPackagingDto>? packagingMap)
         {
             string skuCode = (odooProduct.Default_Code ?? "").ToUpper().Trim();
 
@@ -311,10 +364,121 @@ namespace Victoria.Infrastructure.Integration.Odoo
             product.HasImage = isValidImage(odooProduct.Image_128) || isValidImage(odooProduct.Image_1920);
             product.OdooId = odooProduct.Id;
             product.IsArchived = !odooProduct.Active;
+            
+            // Mapeo Packagings (Union of packaging_ids and bulk_ids)
+            product.Packagings = new List<ProductPackaging>();
+            var pIds = new HashSet<long>();
+            ExtractAttributeIds(odooProduct.packaging_ids, pIds);
+            ExtractAttributeIds(odooProduct.bulk_ids, pIds);
+
+            if (packagingMap != null)
+            {
+                foreach (var pid in pIds)
+                {
+                    if (packagingMap.TryGetValue(pid, out var pkg))
+                    {
+                        product.Packagings.Add(new ProductPackaging
+                        {
+                            OdooId = pkg.Id,
+                            Name = pkg.Name ?? "Bulto",
+                            Qty = (decimal)pkg.NormalizedQty,
+                            Weight = (decimal)pkg.NormalizedWeight,
+                            Length = (decimal)pkg.NormalizedLength,
+                            Width = (decimal)pkg.NormalizedWidth,
+                            Height = (decimal)pkg.NormalizedHeight
+                        });
+                    }
+                }
+            }
+
             product.LastUpdated = DateTime.UtcNow; 
 
             _session.Store(product);
             // Redundant save removed: handled at batch level in SyncAllAsync
+        }
+
+        public async Task SyncSingleAsync(IOdooRpcClient odooClient, string sku)
+        {
+            var fields = new string[] { 
+                "id", "display_name", "default_code", "active", "write_date", "categ_id",
+                "brand_id", "weight", "barcode", "description", "image_128", "image_1920",
+                "bulk_ids", "product_template_attribute_value_ids", "product_template_variant_value_ids"
+            };
+
+            // 1. Fetch Product
+            var odooProducts = await odooClient.SearchAndReadAsync<OdooProductDto>("product.product", new object[][] { new object[] { "default_code", "ilike", sku } }, fields);
+            if (odooProducts == null || odooProducts.Count == 0)
+            {
+                odooProducts = await odooClient.SearchAndReadAsync<OdooProductDto>("product.template", new object[][] { new object[] { "default_code", "ilike", sku } }, fields);
+            }
+
+            if (odooProducts == null || odooProducts.Count == 0)
+            {
+                _logger.LogWarning("[SINGLE-SYNC] Product {Sku} not found in Odoo.", sku);
+                return;
+            }
+
+            var p = odooProducts[0];
+
+            // 2. Fetch Attributes
+            var attributeIds = new HashSet<long>();
+            ExtractAttributeIds(p.product_template_attribute_value_ids, attributeIds);
+            ExtractAttributeIds(p.product_template_variant_value_ids, attributeIds);
+            
+            Dictionary<long, (string AttributeName, string ValueName)>? attributeMap = null;
+            if (attributeIds.Count > 0)
+            {
+                try {
+                    var attrIds = attributeIds.Select(id => (object)id).ToArray();
+                    var attrs = await odooClient.SearchAndReadAsync<OdooAttributeDto>("product.template.attribute.value", new object[][] { new object[] { "id", "in", attrIds } }, new[] { "id", "attribute_id", "name" });
+                    if (attrs != null) {
+                        attributeMap = new Dictionary<long, (string, string)>();
+                        foreach (var a in attrs) {
+                            string attrName = "";
+                            if (a.Attribute_Id is System.Collections.IEnumerable en && !(a.Attribute_Id is string)) {
+                                var l = new List<object>(); foreach (var i in en) l.Add(i);
+                                if (l.Count > 1) attrName = l[1]?.ToString() ?? "";
+                            }
+                            attributeMap[a.Id] = (attrName, a.Name ?? "");
+                        }
+                    }
+                } catch (Exception ex) { _logger.LogError(ex, "[SINGLE-SYNC] Error fetching attributes for {Sku}", sku); }
+            }
+
+            // 3. Fetch Packagings (Standard & Bulk)
+            var packagingMap = new Dictionary<long, OdooPackagingDto>();
+            var bulkIds = new HashSet<long>();
+            ExtractAttributeIds(p.bulk_ids, bulkIds);
+
+            if (bulkIds.Count > 0)
+            {
+                try {
+                    var bIds = bulkIds.Select(id => (object)id).ToArray();
+                    var bulks = await odooClient.SearchAndReadAsync<OdooPackagingDto>("stock.move.bulk", new object[][] { new object[] { "id", "in", bIds } }, new[] { "id", "name", "qty_bulk", "l_cm", "w_cm", "h_cm", "weight" });
+                    if (bulks != null) {
+                        foreach (var b in bulks) packagingMap[b.Id] = b;
+                    }
+                } catch (Exception ex) { _logger.LogError(ex, "[SINGLE-SYNC] Error fetching bulk packagings for {Sku}", sku); }
+            }
+
+            // Standard packagings (if any)
+            var pIds = new HashSet<long>();
+            ExtractAttributeIds(p.packaging_ids, pIds);
+            if (pIds.Count > 0)
+            {
+                try {
+                    var packIds = pIds.Select(id => (object)id).ToArray();
+                    var packs = await odooClient.SearchAndReadAsync<OdooPackagingDto>("product.packaging", new object[][] { new object[] { "id", "in", packIds } }, new[] { "id", "name", "qty", "packaging_length", "packaging_width", "packaging_height", "max_weight" });
+                    if (packs != null) {
+                        foreach (var pkg in packs) packagingMap[pkg.Id] = pkg;
+                    }
+                } catch (Exception ex) { _logger.LogError(ex, "[SINGLE-SYNC] Error fetching standard packagings for {Sku}", sku); }
+            }
+
+            // 4. Sync
+            await SyncProduct(p, attributeMap, packagingMap);
+            await _session.SaveChangesAsync();
+            _logger.LogInformation("[SINGLE-SYNC] Product {Sku} synced successfully with {PkgCount} packagings.", sku, packagingMap.Count);
         }
     }
 }

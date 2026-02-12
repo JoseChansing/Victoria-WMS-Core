@@ -4,6 +4,8 @@ import axios from 'axios';
 import { ArrowLeft, Package, CheckCircle2, AlertCircle, ScanLine, Calculator, Printer, Radio, Camera, Zap } from 'lucide-react';
 import { useInbound } from '../../hooks/useInbound';
 import { zebraService } from '../../services/zebra.service';
+import { PackagingUpdateModal } from './PackagingUpdateModal';
+import api from '../../api/axiosConfig';
 
 interface ReceiveStationProps {
     mode: 'rfid' | 'standard';
@@ -31,6 +33,11 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
     const [manualWidth, setManualWidth] = useState<number | string>(0);
     const [manualHeight, setManualHeight] = useState<number | string>(0);
 
+    // Packaging Intelligence State
+    const [selectedPkgId, setSelectedPkgId] = useState<number | 'manual'>('manual');
+    const [showUpdateModal, setShowUpdateModal] = useState(false);
+    const [pendingParams, setPendingParams] = useState<any>(null);
+
     const inputRef = useRef<HTMLInputElement>(null);
 
     // Find Order
@@ -54,14 +61,39 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
             setManualHeight(0);
         }
 
-        // Auto-Detect Photo Requirement (FORCE TRUE if required)
-        if (selectedLine?.requiresSample && workingMode === 'standard') {
+        // Auto-Detect Packaging (Odoo Bulk Logic)
+        if (selectedLine?.packagings && selectedLine.packagings.length > 0) {
+            // Prioritize the first packaging (usually the Bulk definition)
+            const defaultPkg = selectedLine.packagings[0];
+            setSelectedPkgId(defaultPkg.odooId);
+        } else {
+            setSelectedPkgId('manual');
+        }
+
+        // Auto-Detect Photo Requirement (FORCE TRUE if required and NOT yet received)
+        if (selectedLine?.requiresSample && !selectedLine?.sampleReceived && workingMode === 'standard') {
             setIsPhotoSample(true);
             setUnitsPerLpn(1);
             setLpnCount(1);
+            setSelectedPkgId('manual');
+        } else {
+            setIsPhotoSample(false);
         }
-        // NOTE: We don't force false if !requiresSample, allowing manual user override.
     }, [scanValue, selectedLine, workingMode]);
+
+    // Packaging Auto-Fill logic
+    useEffect(() => {
+        if (selectedPkgId !== 'manual' && selectedLine?.packagings) {
+            const pkg = selectedLine.packagings.find((p: any) => p.odooId === selectedPkgId);
+            if (pkg) {
+                setUnitsPerLpn(pkg.qty);
+                setManualWeight(pkg.weight);
+                setManualLength(pkg.length);
+                setManualWidth(pkg.width);
+                setManualHeight(pkg.height);
+            }
+        }
+    }, [selectedPkgId, selectedLine]);
 
     // Lock parameters when Photo Sample is active
     useEffect(() => {
@@ -145,19 +177,47 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
             return;
         }
 
+        const params: any = {
+            orderId: order.id,
+            rawScan: scanValue,
+            quantity: Number(lpnCount) * Number(unitsPerLpn),
+            lpnCount: Number(lpnCount),
+            unitsPerLpn: Number(unitsPerLpn),
+            weight: Number(manualWeight),
+            length: Number(manualLength),
+            width: Number(manualWidth),
+            height: Number(manualHeight),
+            isPhotoSample: isPhotoSample
+        };
+
+        if (workingMode === 'crossdock') {
+            params.isCrossdock = true;
+        }
+
+        // SMART SAVE DETECTION
+        if (selectedPkgId !== 'manual' && line.packagings) {
+            const pkg = line.packagings.find((p: any) => p.odooId === selectedPkgId);
+            if (pkg) {
+                const hasDiff = pkg.qty !== Number(unitsPerLpn) ||
+                    pkg.weight !== Number(manualWeight) ||
+                    pkg.length !== Number(manualLength) ||
+                    pkg.width !== Number(manualWidth) ||
+                    pkg.height !== Number(manualHeight);
+
+                if (hasDiff) {
+                    setPendingParams({ ...params, autoPrintOverride });
+                    setShowUpdateModal(true);
+                    return; // Wait for modal decision
+                }
+            }
+        }
+
+        await executeReception(params, autoPrintOverride);
+    };
+
+    const executeReception = async (params: any, autoPrintOverride: boolean) => {
         try {
-            const params: any = {
-                orderId: order.id,
-                rawScan: scanValue,
-                quantity: Number(lpnCount) * Number(unitsPerLpn),
-                lpnCount: Number(lpnCount),
-                unitsPerLpn: Number(unitsPerLpn),
-                weight: Number(manualWeight),
-                length: Number(manualLength),
-                width: Number(manualWidth),
-                height: Number(manualHeight),
-                isPhotoSample: isPhotoSample
-            };
+            const line = order?.lines.find((l: any) => l.sku === params.rawScan);
 
             const resetForm = () => {
                 setScanValue('');
@@ -167,12 +227,9 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
                 setManualLength(0);
                 setManualWidth(0);
                 setManualHeight(0);
+                setSelectedPkgId('manual');
                 if (inputRef.current) inputRef.current.focus();
             };
-
-            if (workingMode === 'crossdock') {
-                params.isCrossdock = true;
-            }
 
             const response = await receiveLpn(params);
             const lpnIds = response.lpnIds as string[];
@@ -180,21 +237,16 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
                 console.log("✅ Recepción exitosa. IDs:", lpnIds);
                 setLastReceivedLpnIds(lpnIds);
 
-                // AUTO-TRIGGER LOGIC: Unified for Standard and RFID
                 const shouldPrint = autoPrintOverride ?? false;
 
                 if (shouldPrint) {
                     if (rfidMode === 'rfid') {
-                        console.log("🚀 Disparando impresión automática RFID...");
-                        // SILENT AUTO-PROGRAMMING: Non-blocking attempt
                         setTimeout(() => {
                             handlePrintBatch(lpnIds).catch((err) => {
-                                console.warn("Auto-RFID print failed - likely zebra service not ready.", err);
+                                console.warn("Auto-RFID print failed.", err);
                             });
                         }, 500);
                     } else {
-                        // Standard PDF Printing (Legacy method)
-                        console.log("🚀 Generando PDF automático...");
                         setTimeout(() => {
                             const url = `/api/v1/printing/batch?ids=${lpnIds.join(',')}&t=${Date.now()}`;
                             setPrintUrl(url);
@@ -203,19 +255,54 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
                 }
             }
 
-            setFeedback({ type: 'success', message: `Recibido: ${lpnCount} LPN(s) x ${unitsPerLpn} unid. de ${line.productName}` });
+            setFeedback({ type: 'success', message: `Recibido: ${params.lpnCount} LPN(s) de ${line.productName}` });
             resetForm();
         } catch (error: any) {
-            // Robust error parsing
             const errorData = error.response?.data;
             const errorMsg = (typeof errorData === 'string' ? errorData : errorData?.error) || error.message || '';
 
             if (errorMsg.includes('[GOLDEN-SAMPLE]')) {
-                setSelectedSkuForPhoto(scanValue);
+                setSelectedSkuForPhoto(params.rawScan);
                 setShowPhotoWizard(true);
             } else {
                 setFeedback({ type: 'error', message: 'Reception failed. Please try again.' });
             }
+        }
+    };
+
+    const handlePackagingUpdateConfirm = async (action: 'receive_only' | 'update_odoo' | 'create_new') => {
+        if (!pendingParams) return;
+
+        try {
+            if (action === 'update_odoo') {
+                await api.put(`products/${pendingParams.rawScan}/packaging/${selectedPkgId}`, {
+                    name: selectedLine.packagings.find((p: any) => p.odooId === selectedPkgId)?.name,
+                    qty: Number(unitsPerLpn),
+                    weight: Number(manualWeight),
+                    length: Number(manualLength),
+                    width: Number(manualWidth),
+                    height: Number(manualHeight)
+                });
+            } else if (action === 'create_new') {
+                await api.post(`products/${pendingParams.rawScan}/packaging`, {
+                    name: `EMP ${unitsPerLpn} UN`, // Auto-naming
+                    qty: Number(unitsPerLpn),
+                    weight: Number(manualWeight),
+                    length: Number(manualLength),
+                    width: Number(manualWidth),
+                    height: Number(manualHeight)
+                });
+            }
+
+            // Proceed with reception
+            await executeReception(pendingParams, pendingParams.autoPrintOverride);
+        } catch (err) {
+            console.error("Error in Smart Save:", err);
+            alert("Error al procesar Smart Save. Se procederá solo con la recepción.");
+            await executeReception(pendingParams, pendingParams.autoPrintOverride);
+        } finally {
+            setShowUpdateModal(false);
+            setPendingParams(null);
         }
     };
 
@@ -320,7 +407,76 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
                                                     />
                                                     <ScanLine className="absolute left-6 top-1/2 -translate-y-1/2 w-8 h-8 text-slate-500 group-focus-within:text-blue-400 transition-colors animate-pulse" />
                                                 </div>
+
+                                                {/* Compact Item Details - Moved from bottom card */}
+                                                {selectedLine && (
+                                                    <div className="mt-4 p-5 bg-corp-base/30 rounded-2xl border border-corp-secondary/20 animate-in fade-in slide-in-from-top-2 duration-300">
+                                                        <div className="flex flex-col space-y-2">
+                                                            <div className="flex items-baseline flex-wrap gap-x-2">
+                                                                <span className="text-xl font-black text-corp-accent uppercase leading-tight">[{selectedLine.sku}]</span>
+                                                                <span className="text-xl font-black text-white leading-tight opacity-90">{selectedLine.productName}</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="flex items-center gap-2 bg-blue-500/10 px-3 py-1.5 rounded-lg border border-blue-500/20">
+                                                                    <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest leading-none flex items-center gap-2">
+                                                                        <span>{selectedLine.brand || 'NO BRAND'}</span>
+                                                                        {(selectedLine.sides && selectedLine.sides !== 'N/A') && (
+                                                                            <>
+                                                                                <span className="text-blue-900/40">|</span>
+                                                                                <span>{selectedLine.sides}</span>
+                                                                            </>
+                                                                        )}
+                                                                        {(selectedLine.category && selectedLine.category !== 'SIN CATEGORÍA' && selectedLine.category !== '') && (
+                                                                            <>
+                                                                                <span className="text-blue-900/40">|</span>
+                                                                                <span className="text-white/60">{selectedLine.category}</span>
+                                                                            </>
+                                                                        )}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
+
+                                            {selectedLine?.packagings && selectedLine.packagings.length > 0 && (
+                                                <div className="col-span-full animate-in slide-in-from-top-2 duration-300">
+                                                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-2 tracking-[0.2em] ml-2">
+                                                        Seleccionar Empaque (Odoo)
+                                                    </label>
+                                                    <div className="grid grid-cols-1 gap-2">
+                                                        {selectedLine.packagings.map((pkg: any) => (
+                                                            <button
+                                                                key={pkg.odooId}
+                                                                type="button"
+                                                                onClick={() => setSelectedPkgId(pkg.odooId)}
+                                                                className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${selectedPkgId === pkg.odooId ? 'bg-indigo-600/20 border-indigo-500 shadow-lg shadow-indigo-500/10' : 'bg-slate-900/40 border-corp-secondary/50 hover:border-slate-500'}`}
+                                                            >
+                                                                <div className="flex items-center gap-3">
+                                                                    <Package className={`w-5 h-5 ${selectedPkgId === pkg.odooId ? 'text-indigo-400' : 'text-slate-600'}`} />
+                                                                    <div className="text-left">
+                                                                        <p className="text-sm font-black text-white uppercase tracking-tight">{pkg.name}</p>
+                                                                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{pkg.qty} UNIDADES</p>
+                                                                    </div>
+                                                                </div>
+                                                                {selectedPkgId === pkg.odooId && <CheckCircle2 className="w-5 h-5 text-indigo-400" />}
+                                                            </button>
+                                                        ))}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setSelectedPkgId('manual')}
+                                                            className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${selectedPkgId === 'manual' ? 'bg-slate-700/40 border-slate-500' : 'bg-slate-900/40 border-corp-secondary/50 hover:border-slate-600'}`}
+                                                        >
+                                                            <div className="flex items-center gap-3">
+                                                                <Calculator className={`w-5 h-5 ${selectedPkgId === 'manual' ? 'text-slate-300' : 'text-slate-600'}`} />
+                                                                <span className="text-sm font-black text-slate-400 uppercase tracking-tight">Ingreso Manual / Genérico</span>
+                                                            </div>
+                                                            {selectedPkgId === 'manual' && <CheckCircle2 className="w-5 h-5 text-slate-400" />}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
 
@@ -361,15 +517,19 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
                                         </div>
 
                                         {workingMode === 'standard' && (
-                                            <div className="bg-corp-base/50 p-6 rounded-3xl border border-corp-secondary/30 flex items-center justify-between group cursor-pointer hover:border-amber-500/40 transition-all"
-                                                onClick={() => setIsPhotoSample(!isPhotoSample)}>
+                                            <div
+                                                className={`p-6 rounded-3xl border flex items-center justify-between group transition-all ${selectedLine?.sampleReceived ? 'bg-slate-800/50 border-slate-700/50 cursor-not-allowed grayscale' : 'bg-corp-base/50 border-corp-secondary/30 cursor-pointer hover:border-amber-500/40'}`}
+                                                title={selectedLine?.sampleReceived ? "Muestra ya recibida" : ""}
+                                                onClick={() => !selectedLine?.sampleReceived && setIsPhotoSample(!isPhotoSample)}>
                                                 <div className="flex items-center gap-4">
                                                     <div className={`p-3 rounded-xl transition-all ${isPhotoSample ? 'bg-amber-500/20 text-amber-500' : 'bg-slate-800 text-slate-500'}`}>
                                                         <Camera className="w-5 h-5" />
                                                     </div>
                                                     <div>
                                                         <p className="text-xs font-black text-white uppercase tracking-wider">PHOTO-STATION (Muestra)</p>
-                                                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Desviar unidad para control de calidad</p>
+                                                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
+                                                            {selectedLine?.sampleReceived ? "Muestra ya en estación" : "Desviar unidad para control de calidad"}
+                                                        </p>
                                                     </div>
                                                 </div>
                                                 <div className={`w-12 h-6 rounded-full transition-all relative ${isPhotoSample ? 'bg-amber-600' : 'bg-slate-700'}`}>
@@ -508,59 +668,6 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
                                 </div>
                             )}
 
-                            {/* SKU Info Card */}
-                            {selectedLine && (
-                                <div className="bg-corp-nav/40 backdrop-blur-md rounded-[2.5rem] p-10 border border-corp-secondary/50 shadow-2xl space-y-8 animate-in zoom-in duration-500 mt-8">
-                                    <div className="flex items-center justify-between mb-6">
-                                        <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                                            <Package className="w-4 h-4 text-blue-400" />
-                                            SELECTED ITEM DETAILS
-                                        </h2>
-                                    </div>
-                                    <div className="flex items-center space-x-6">
-                                        <div className="p-5 bg-corp-base rounded-[2rem] border border-corp-secondary/50 text-blue-400 shadow-inner">
-                                            <Package className="w-10 h-10" />
-                                        </div>
-                                        <div>
-                                            <h3 className="text-3xl font-black tracking-tighter text-white flex flex-wrap items-baseline gap-2">
-                                                <span className="text-corp-accent">{selectedLine.brand}</span>
-                                                <span className="opacity-90">{selectedLine.productName}</span>
-                                                <span className="text-corp-accent">{selectedLine.sides}</span>
-                                            </h3>
-                                            <div className="flex items-center space-x-3 mt-2">
-                                                <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">{selectedLine.sku}</p>
-                                                <span className="text-slate-700">|</span>
-                                                <div className="flex items-center space-x-2 bg-blue-500/10 px-3 py-1 rounded-lg border border-blue-500/20 shadow-inner group-hover:border-blue-500/40 transition-all">
-                                                    <span className="text-[9px] font-black text-blue-400 uppercase tracking-widest">
-                                                        WEIGHT: {selectedLine.dimensions?.weight || 0}kg |
-                                                        DIM: {selectedLine.dimensions?.length || 0}x{selectedLine.dimensions?.width || 0}x{selectedLine.dimensions?.height || 0}cm |
-                                                        VOL: {((selectedLine.dimensions?.length || 0) * (selectedLine.dimensions?.width || 0) * (selectedLine.dimensions?.height || 0) / 1000000).toFixed(4)}m³
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-6">
-                                        <div className="bg-corp-base/40 p-6 rounded-3xl border border-corp-secondary/30 shadow-inner">
-                                            <div className="flex items-center space-x-3 mb-3">
-                                                <Calculator className="w-4 h-4 text-emerald-400" />
-                                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Unit Weight</span>
-                                            </div>
-                                            <p className="text-2xl font-black text-white font-mono">{selectedLine.dimensions?.weight || 0} <span className="text-[10px] text-slate-500">kg</span></p>
-                                        </div>
-                                        <div className="bg-corp-base/40 p-6 rounded-3xl border border-corp-secondary/30 shadow-inner">
-                                            <div className="flex items-center space-x-3 mb-3">
-                                                <ScanLine className="w-4 h-4 text-blue-400" />
-                                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Dimensions</span>
-                                            </div>
-                                            <p className="text-lg font-black text-white font-mono">
-                                                {selectedLine.dimensions?.length || 0}x{selectedLine.dimensions?.width || 0}x{selectedLine.dimensions?.height || 0}
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
                         </div>
 
                         {/* Right: Items List */}
@@ -587,20 +694,38 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
                                                     <div>
                                                         <div className="flex items-center gap-2">
                                                             <p className="font-black text-white text-lg tracking-tight">{line.sku}</p>
-                                                            {line.requiresSample && (
+                                                            {line.requiresSample && !line.sampleReceived && (
                                                                 <div className="flex items-center gap-1 px-2 py-0.5 bg-amber-500/10 border border-amber-500/20 rounded-md">
                                                                     <Camera className="w-3 h-3 text-amber-500" />
                                                                     <span className="text-[8px] font-black text-amber-500 uppercase tracking-tighter">Photo Required</span>
                                                                 </div>
                                                             )}
+                                                            {line.sampleReceived && (
+                                                                <div className="flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 rounded-md">
+                                                                    <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                                                                    <Camera className="w-3 h-3 text-emerald-500" />
+                                                                    <span className="text-[8px] font-black text-emerald-500 uppercase tracking-tighter">✅📷 Muestra Recibida</span>
+                                                                </div>
+                                                            )}
                                                         </div>
                                                         <div className="text-[10px] text-slate-400 font-bold uppercase flex items-center gap-1.5 min-w-0 max-w-[400px]">
-                                                            <span className="px-1.5 py-0.5 bg-corp-base/40 rounded border border-corp-secondary/30 text-blue-400 shrink-0">
-                                                                {line.brand || 'NO BRAND'}
-                                                            </span>
-                                                            <span className="truncate opacity-80">{line.productName}</span>
-                                                            <span className="px-1.5 py-0.5 bg-corp-base/40 rounded border border-corp-secondary/30 text-blue-400 shrink-0">
-                                                                {line.sides || 'N/A'}
+                                                            <div className="flex items-center gap-1 bg-corp-base/40 px-2 py-0.5 rounded border border-corp-secondary/30 text-blue-400 shrink-0">
+                                                                <span>{line.brand || 'NO BRAND'}</span>
+                                                                {(line.sides && line.sides !== 'N/A') && (
+                                                                    <>
+                                                                        <span className="text-blue-900/20">|</span>
+                                                                        <span>{line.sides}</span>
+                                                                    </>
+                                                                )}
+                                                                {(line.category && line.category !== '' && line.category !== 'N/A') && (
+                                                                    <>
+                                                                        <span className="text-blue-900/20">|</span>
+                                                                        <span className="text-white/60">{line.category}</span>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                            <span className="truncate opacity-80">
+                                                                {(line.productName || '').replace(/^\[.*?\]\s*/, '')}
                                                             </span>
                                                         </div>
                                                     </div>
@@ -697,6 +822,29 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
                         // Reset the URL after loading so it can be re-triggered
                         setTimeout(() => setPrintUrl(null), 1000);
                     }}
+                />
+            )}
+
+            {showUpdateModal && selectedLine && selectedPkgId !== 'manual' && (
+                <PackagingUpdateModal
+                    isOpen={showUpdateModal}
+                    onClose={() => setShowUpdateModal(false)}
+                    packagingName={selectedLine.packagings.find((p: any) => p.odooId === selectedPkgId)?.name || ''}
+                    currentData={{
+                        qty: selectedLine.packagings.find((p: any) => p.odooId === selectedPkgId)?.qty || 0,
+                        weight: selectedLine.packagings.find((p: any) => p.odooId === selectedPkgId)?.weight || 0,
+                        length: selectedLine.packagings.find((p: any) => p.odooId === selectedPkgId)?.length || 0,
+                        width: selectedLine.packagings.find((p: any) => p.odooId === selectedPkgId)?.width || 0,
+                        height: selectedLine.packagings.find((p: any) => p.odooId === selectedPkgId)?.height || 0
+                    }}
+                    newData={{
+                        qty: Number(unitsPerLpn),
+                        weight: Number(manualWeight),
+                        length: Number(manualLength),
+                        width: Number(manualWidth),
+                        height: Number(manualHeight)
+                    }}
+                    onConfirm={handlePackagingUpdateConfirm}
                 />
             )}
         </div>

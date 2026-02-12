@@ -4,9 +4,10 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import {
     Search, Database, ChevronLeft, ChevronRight, ChevronDown,
     Filter, X, Trash2,
-    Tag, Layers, Image, Loader2
+    Tag, Layers, Image, Loader2, Package
 } from 'lucide-react';
 import api from '../../api/axiosConfig';
+import { PackagingModal } from './PackagingModal';
 
 interface Product {
     sku: string;
@@ -23,6 +24,18 @@ interface Product {
         width: number;
         height: number;
     };
+    packagings: {
+        odooId: number;
+        name: string;
+        qty: number;
+        weight: number;
+        length: number;
+        width: number;
+        height: number;
+    }[];
+    hasPackaging: boolean;
+    unitWeight?: number;
+    unitVolume?: number;
 }
 
 interface PagedResult<T> {
@@ -49,6 +62,8 @@ export const SkuMaster: React.FC = () => {
     const [brandFilter, setBrandFilter] = useState('');
     const [categoryFilter, setCategoryFilter] = useState('');
     const [selectedHasImage, setSelectedHasImage] = useState('');
+    const [includeArchived, setIncludeArchived] = useState(false);
+    const [selectedProductPackaging, setSelectedProductPackaging] = useState<{ sku: string, packagings: any[] } | null>(null);
 
     // Debounce Search Effect (Search + Filters)
     React.useEffect(() => {
@@ -74,7 +89,7 @@ export const SkuMaster: React.FC = () => {
     const suggestions = suggestionsData || [];
 
     const { data, isLoading } = useQuery({
-        queryKey: ['products', page, pageSize, serverSearch, brandFilter, categoryFilter, selectedHasImage],
+        queryKey: ['products', page, pageSize, serverSearch, brandFilter, categoryFilter, selectedHasImage, includeArchived],
         queryFn: async () => {
             const params = new URLSearchParams();
             params.append('page', page.toString());
@@ -83,6 +98,7 @@ export const SkuMaster: React.FC = () => {
             if (brandFilter) params.append('brand', brandFilter);
             if (categoryFilter) params.append('category', categoryFilter);
             if (selectedHasImage) params.append('hasImage', selectedHasImage);
+            if (includeArchived) params.append('includeArchived', 'true');
 
             const { data } = await api.get<PagedResult<Product>>(`products?${params.toString()}`);
             return data;
@@ -321,6 +337,21 @@ export const SkuMaster: React.FC = () => {
                                             <button onClick={() => { setSelectedHasImage('false'); setPage(1); }} className={`w-full text-left px-3 py-1.5 text-sm rounded-lg ${selectedHasImage === 'false' ? 'bg-corp-accent/20 text-corp-accent font-bold' : 'text-slate-400 hover:bg-corp-base/50 hover:text-white'}`}>No Image</button>
                                         </div>
                                     </div>
+
+                                    <div className="h-px bg-corp-secondary/30 my-1"></div>
+
+                                    {/* Archived Toggle */}
+                                    <div className="p-2">
+                                        <button
+                                            onClick={() => { setIncludeArchived(!includeArchived); setPage(1); }}
+                                            className={`w-full flex items-center justify-between px-3 py-2 text-sm rounded-lg transition-colors ${includeArchived ? 'bg-rose-900/20 text-rose-400 border border-rose-900/50' : 'text-slate-400 hover:bg-corp-base/50 hover:text-white'}`}
+                                        >
+                                            <span className="font-bold">Show Archived</span>
+                                            <div className={`w-8 h-4 rounded-full relative transition-colors ${includeArchived ? 'bg-rose-500' : 'bg-slate-700'}`}>
+                                                <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${includeArchived ? 'left-4.5' : 'left-0.5'}`} style={{ left: includeArchived ? '18px' : '2px' }} />
+                                            </div>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
 
@@ -367,6 +398,7 @@ export const SkuMaster: React.FC = () => {
                                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-corp-base">Brand</th>
                                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center bg-corp-base">Sides</th>
                                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-corp-base">Category</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center bg-corp-base">Bultos</th>
                                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center bg-corp-base">Unit Weight</th>
                                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right bg-corp-base">Volume m3 (Unit)</th>
                                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center bg-corp-base">Image</th>
@@ -414,15 +446,24 @@ export const SkuMaster: React.FC = () => {
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 text-center">
+                                            <button
+                                                onClick={() => setSelectedProductPackaging({ sku: product.sku, packagings: product.packagings })}
+                                                className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all duration-300 ${product.hasPackaging ? 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30' : 'bg-slate-900 text-slate-600 border-slate-800 opacity-40 hover:opacity-100'}`}
+                                            >
+                                                <Package className="w-3 h-3" />
+                                                {product.hasPackaging ? (product.packagings?.length || 0) : 0}
+                                            </button>
+                                        </td>
+                                        <td className="px-6 py-4 text-center">
                                             <span className="text-sm font-bold text-slate-400">
-                                                {product.physicalAttributes?.weight ? `${product.physicalAttributes.weight} kg` : 'N/A'}
+                                                {product.unitWeight ? `${product.unitWeight.toFixed(2)} kg` : (product.physicalAttributes?.weight ? `${product.physicalAttributes.weight.toFixed(2)} kg` : 'N/A')}
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 text-right">
                                             <span className="text-sm font-mono text-slate-500">
-                                                {product.physicalAttributes
-                                                    ? (product.physicalAttributes.length * product.physicalAttributes.width * product.physicalAttributes.height / 1000000).toFixed(4)
-                                                    : '0.0000'}
+                                                {(product.unitVolume ? product.unitVolume / 1000000 : (product.physicalAttributes
+                                                    ? (product.physicalAttributes.length * product.physicalAttributes.width * product.physicalAttributes.height / 1000000)
+                                                    : 0)).toFixed(3)}
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 text-center">
@@ -446,6 +487,20 @@ export const SkuMaster: React.FC = () => {
                     </table>
                 </div>
             </div>
+
+            {selectedProductPackaging && (
+                <PackagingModal
+                    sku={selectedProductPackaging.sku}
+                    packagings={selectedProductPackaging.packagings}
+                    isOpen={!!selectedProductPackaging}
+                    onClose={() => setSelectedProductPackaging(null)}
+                    onRefresh={() => {
+                        queryClient.invalidateQueries({ queryKey: ['products'] });
+                        // Re-fetch current selected product if needed or just wait for products invalidation
+                        // To keep it simple, we invalidate 'products' which will update everything.
+                    }}
+                />
+            )}
         </div>
     );
 };

@@ -96,6 +96,20 @@ namespace Victoria.Inventory.Application.Commands
                 // Final Check: If SKU is still empty/null, use "UNKNOWN" to avoid crashing Create
                 if (string.IsNullOrEmpty(skuValue)) skuValue = "UNKNOWN";
 
+                // FOOL-PROOF VALIDATION: Prevent double samples in PHOTO-STATION
+                if (command.IsPhotoSample)
+                {
+                    var existingSample = await _session.Query<Lpn>()
+                        .AnyAsync(x => x.SelectedOrderId == command.OrderId && 
+                                       x.Sku == Sku.Create(skuValue) && 
+                                       x.CurrentLocationId == "PHOTO-STATION");
+                    
+                    if (existingSample)
+                    {
+                        throw new InvalidOperationException("⛔ BLOQUEO: Ya existe 1 unidad en PHOTO-STATION para este ítem.");
+                    }
+                }
+
                 // Load product ONCE for all uses (attributes, validation, brand/barcode)
                 var product = await _session.LoadAsync<Product>(skuValue);
 
@@ -174,12 +188,22 @@ namespace Victoria.Inventory.Application.Commands
                         product?.Sides ?? "",
                         product?.Barcode ?? "");
 
+                    lpn.Receive(command.OrderId, command.UserId, command.StationId);
+
                     if (order?.IsCrossdock == true)
                     {
                         lpn.SetTargetOrder(order.TargetOutboundOrder ?? "UNASSIGNED");
                     }
 
                     lpn.Putaway(initialLocation, "SYS", "RECEPTION"); 
+
+                    // AUTO-DECONSOLIDATION LOGIC (Must be AFTER Putaway to prevail as final status)
+                    var targetLoc = await _session.LoadAsync<Location>(initialLocation);
+                    if (targetLoc != null && targetLoc.Profile == LocationProfile.Picking)
+                    {
+                        Console.WriteLine($"[DECONSOLIDATION] Target location {initialLocation} is PICKING. Consuming LPN {lpnId}.");
+                        lpn.Deconsolidate(command.UserId, command.StationId);
+                    }
                     
                     if (moveReason != null)
                     {
@@ -197,7 +221,7 @@ namespace Victoria.Inventory.Application.Commands
                         lpn.Quarantine($"OVERAGE_PENDING_APPROVAL", command.UserId, command.StationId);
                     }
                     
-                    lpn.Receive(command.OrderId, command.UserId, command.StationId);
+                     // End of processing
                     await _eventStore.AppendEventsAsync(lpnId, -1, lpn.Changes);
                     
                     // CRITICAL FIX: Persist the Read Model (Marten) so it can be queried immediately

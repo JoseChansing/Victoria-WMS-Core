@@ -7,5 +7,6 @@ namespace Victoria.Core.Interfaces
     {
         Task<int> SyncAllAsync(IOdooRpcClient odooClient);
         Task SyncProduct(OdooProductDto product);
+        Task SyncSingleAsync(IOdooRpcClient odooClient, string sku);
     }
 }

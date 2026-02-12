@@ -24,7 +24,7 @@ namespace Victoria.Inventory.Application.Services
             _logger = logger;
         }
 
-        public async System.Threading.Tasks.Task<Guid> AllocateWaveAsync(Guid[] orderIds)
+        public async System.Threading.Tasks.Task<Guid> AllocateWaveAsync(string[] orderIds)
         {
             _logger.LogInformation("Allocating wave for {Count} orders", orderIds.Length);
 

@@ -1,4 +1,7 @@
 using System;
+using System.Linq;
+using System.Collections.Generic;
+using Newtonsoft.Json;
 using Victoria.Inventory.Domain.ValueObjects;
 
 namespace Victoria.Inventory.Domain.Aggregates
@@ -19,6 +22,66 @@ namespace Victoria.Inventory.Domain.Aggregates
         public int OdooId { get; set; }
         public bool HasImage { get; set; }
         public bool IsArchived { get; set; }
+        public List<ProductPackaging> Packagings { get; set; } = new();
+        public bool HasPackaging => Packagings?.Any() ?? false;
+
+        [JsonProperty]
+        public decimal UnitWeight
+        {
+            get
+            {
+                try
+                {
+                    if (Packagings == null || !Packagings.Any())
+                    {
+                        var w = PhysicalAttributes?.Weight ?? 0;
+                        return double.IsFinite(w) ? (decimal)w : 0;
+                    }
+
+                    var minPkg = Packagings.Where(p => p.Qty > 0).OrderBy(p => p.Qty).FirstOrDefault();
+                    if (minPkg == null)
+                    {
+                        var w = PhysicalAttributes?.Weight ?? 0;
+                        return double.IsFinite(w) ? (decimal)w : 0;
+                    }
+
+                    return minPkg.Weight / minPkg.Qty;
+                }
+                catch { return 0; }
+            }
+        }
+
+        [JsonProperty]
+        public decimal UnitVolume
+        {
+            get
+            {
+                try
+                {
+                    if (Packagings == null || !Packagings.Any())
+                        return 0;
+
+                    var minPkg = Packagings.Where(p => p.Qty > 0).OrderBy(p => p.Qty).FirstOrDefault();
+                    if (minPkg == null) return 0;
+
+                    var volume = minPkg.Length * minPkg.Width * minPkg.Height;
+                    return minPkg.Qty > 0 ? volume / minPkg.Qty : 0;
+                }
+                catch { return 0; }
+            }
+        }
+
         public DateTime LastUpdated { get; set; } = DateTime.UtcNow;
+    }
+
+    public class ProductPackaging
+    {
+        public int OdooId { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public decimal Qty { get; set; }
+        public decimal Weight { get; set; }
+        public decimal Length { get; set; }
+        public decimal Width { get; set; }
+        public decimal Height { get; set; }
     }
 }

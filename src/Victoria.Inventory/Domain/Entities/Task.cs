@@ -22,7 +22,7 @@ namespace Victoria.Inventory.Domain.Entities
     {
         public Guid Id { get; set; }
         public Guid WaveId { get; private set; }
-        public Guid OutboundOrderId { get; private set; } // Nullable if generic task? For now let's keep it linked or null for CycleCount
+        public string OutboundOrderId { get; private set; } // Reference to OutboundOrder.Id (Odoo Name)
         public string LineId { get; private set; } // Reference to OutboundLine (if picking)
 
         public TaskType Type { get; private set; }
@@ -39,7 +39,7 @@ namespace Victoria.Inventory.Domain.Entities
         public DateTime CreatedAt { get; private set; }
         public string AssociatedToteId { get; private set; }
 
-        public Task(Guid waveId, Guid orderId, string lineId, TaskType type, string sourceLocation, string targetLocation, string lpnId, string productId, double quantity)
+        public Task(Guid waveId, string orderId, string lineId, TaskType type, string sourceLocation, string targetLocation, string lpnId, string productId, double quantity)
         {
             Id = Guid.NewGuid();
             WaveId = waveId;
@@ -58,15 +58,15 @@ namespace Victoria.Inventory.Domain.Entities
         // Factory for CycleCount
         public static Task CreateCycleCount(Guid waveId, string locationId, string expectedProductId)
         {
-             return new Task(waveId, Guid.Empty, string.Empty, TaskType.CycleCount, locationId, "SYSTEM", string.Empty, expectedProductId, 0);
+             return new Task(waveId, string.Empty, string.Empty, TaskType.CycleCount, locationId, "SYSTEM", string.Empty, expectedProductId, 0);
         }
 
         public static Task CreateFullPalletMove(Guid waveId, string sourceLocation, double quantity, string productId, string lpnId)
         {
-            return new Task(waveId, Guid.Empty, string.Empty, TaskType.FullPalletMove, sourceLocation, "DOCK-OUT", lpnId, productId, quantity);
+            return new Task(waveId, string.Empty, string.Empty, TaskType.FullPalletMove, sourceLocation, "DOCK-OUT", lpnId, productId, quantity);
         }
 
-        public static Task CreatePickToTote(Guid waveId, Guid orderId, string lineId, string sourceLocation, string targetTote, string lpnId, string productId, double quantity)
+        public static Task CreatePickToTote(Guid waveId, string orderId, string lineId, string sourceLocation, string targetTote, string lpnId, string productId, double quantity)
         {
             return new Task(waveId, orderId, lineId, TaskType.PickToTote, sourceLocation, targetTote, lpnId, productId, quantity);
         }

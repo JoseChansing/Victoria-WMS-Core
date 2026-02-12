@@ -88,8 +88,8 @@ namespace Victoria.Inventory.Domain.Aggregates
 
         public void Allocate(string orderId, Sku sku, string userId, string stationId)
         {
-            if (Status != LpnStatus.Putaway)
-                throw new InvalidOperationException($"Only LPNs in Putaway status can be allocated. Current status: {Status}");
+            if (Status != LpnStatus.Active && Status != LpnStatus.Putaway)
+                throw new InvalidOperationException($"Only Active LPNs can be allocated. Current status: {Status}");
 
             if (Sku != sku)
                 throw new ArgumentException($"SKU mismatch. Expected: {Sku}, Requested: {sku}");
@@ -164,6 +164,20 @@ namespace Victoria.Inventory.Domain.Aggregates
             _changes.Add(@event);
         }
 
+        public void Deconsolidate(string userId, string stationId)
+        {
+            if (Status == LpnStatus.Consumed) return;
+
+            var @event = new LpnDeconsolidated(Id, DateTime.UtcNow, userId, stationId);
+            Apply(@event);
+            _changes.Add(@event);
+        }
+
+        public void Apply(LpnDeconsolidated e)
+        {
+            Status = LpnStatus.Consumed;
+        }
+
         public void Quarantine(string reason, string userId, string stationId)
         {
             var @event = new LpnQuarantined(Id, reason, DateTime.UtcNow, userId, stationId);
@@ -204,7 +218,7 @@ namespace Victoria.Inventory.Domain.Aggregates
 
         public void Apply(PutawayCompleted e)
         {
-            Status = LpnStatus.Putaway;
+            Status = LpnStatus.Active;
         }
 
         public void Apply(LpnAllocated e)
@@ -268,6 +282,8 @@ namespace Victoria.Inventory.Domain.Aggregates
         Dispatched,
         Shipped,
         Quarantine,
-        Blocked
+        Blocked,
+        Consumed,
+        Active
     }
 }

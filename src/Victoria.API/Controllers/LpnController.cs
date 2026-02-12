@@ -23,7 +23,9 @@ namespace Victoria.API.Controllers
         [HttpGet]
         public async Task<ActionResult<IReadOnlyList<Lpn>>> GetAllLpns()
         {
-            var lpns = await _session.Query<Lpn>().ToListAsync();
+            var lpns = await _session.Query<Lpn>()
+                .Where(x => x.Status == LpnStatus.Active)
+                .ToListAsync();
             return Ok(lpns);
         }
 

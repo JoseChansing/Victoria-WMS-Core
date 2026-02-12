@@ -93,7 +93,14 @@ namespace Victoria.API.Controllers
                 // Enrich with product dimensions AND current names for UI
                 var skus = orders.SelectMany(o => o.Lines).Select(l => l.Sku).Distinct().ToList();
                 var products = await _session.Query<Product>().Where(p => p.Sku.In(skus)).ToListAsync();
-                var productDict = products.ToDictionary(p => p.Sku);
+                // DEFENSIVE: Handle potential duplicate SKUs in master data
+                var productDict = products.GroupBy(p => p.Sku).ToDictionary(g => g.Key, g => g.First());
+
+                // Fetch samples already in PHOTO-STATION for these orders
+                var orderIds = orders.Select(o => o.Id).ToList();
+                var samplesInPhoto = await _session.Query<Lpn>()
+                    .Where(x => x.SelectedOrderId.In(orderIds) && x.CurrentLocationId == "PHOTO-STATION")
+                    .ToListAsync();
 
                 var result = orders.Select(o => new {
                     o.Id,
@@ -104,21 +111,27 @@ namespace Victoria.API.Controllers
                     o.TotalUnits,
                     o.IsCrossdock,
                     o.TargetOutboundOrder,
-                    Lines = o.Lines.Select(l => new {
-                        l.Sku,
-                        // e CRITICAL FIX: Use current product name from master, fallback to stored name
-                        ProductName = productDict.TryGetValue(l.Sku, out var p) ? p.Name : l.ProductName,
-                        Brand = productDict.TryGetValue(l.Sku, out var pb) ? pb.Brand : (l.Brand ?? ""),
-                        Sides = productDict.TryGetValue(l.Sku, out var ps) ? ps.Sides : (l.Sides ?? ""),
-                        l.ExpectedQty,
-                        l.ReceivedQty,
-                        RequiresSample = productDict.TryGetValue(l.Sku, out var pr) ? !pr.HasImage : true,
-                        Dimensions = productDict.TryGetValue(l.Sku, out var prod) ? new {
-                            Weight = prod.PhysicalAttributes?.Weight ?? 0,
-                            Length = prod.PhysicalAttributes?.Length ?? 0,
-                            Width = prod.PhysicalAttributes?.Width ?? 0,
-                            Height = prod.PhysicalAttributes?.Height ?? 0
-                        } : null
+                    Lines = o.Lines.Select(l => {
+                        var isSampleInPhoto = samplesInPhoto.Any(s => s.Sku.Value == l.Sku && s.SelectedOrderId == o.Id);
+                        return new {
+                            l.Sku,
+                            // e CRITICAL FIX: Use current product name from master, fallback to stored name
+                            ProductName = productDict.TryGetValue(l.Sku, out var p) ? p.Name : l.ProductName,
+                            Brand = productDict.TryGetValue(l.Sku, out var pb) ? pb.Brand : (l.Brand ?? ""),
+                            Sides = productDict.TryGetValue(l.Sku, out var ps) ? ps.Sides : (l.Sides ?? ""),
+                            l.ExpectedQty,
+                            l.ReceivedQty,
+                            RequiresSample = productDict.TryGetValue(l.Sku, out var pr) ? !pr.HasImage : true,
+                            SampleReceived = isSampleInPhoto,
+                            Dimensions = productDict.TryGetValue(l.Sku, out var prod) ? new {
+                                Weight = double.IsFinite(prod.PhysicalAttributes?.Weight ?? 0) ? prod.PhysicalAttributes?.Weight ?? 0 : 0,
+                                Length = double.IsFinite(prod.PhysicalAttributes?.Length ?? 0) ? prod.PhysicalAttributes?.Length ?? 0 : 0,
+                                Width = double.IsFinite(prod.PhysicalAttributes?.Width ?? 0) ? prod.PhysicalAttributes?.Width ?? 0 : 0,
+                                Height = double.IsFinite(prod.PhysicalAttributes?.Height ?? 0) ? prod.PhysicalAttributes?.Height ?? 0 : 0
+                            } : null,
+                            Category = productDict.TryGetValue(l.Sku, out var pc) ? pc.Category : "",
+                            Packagings = productDict.TryGetValue(l.Sku, out var pp) ? pp.Packagings : null
+                        };
                     })
                 });
 

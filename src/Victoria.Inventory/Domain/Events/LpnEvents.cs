@@ -27,6 +27,13 @@ namespace Victoria.Inventory.Domain.Events
         string StationId
     ) : IDomainEvent;
 
+    public record LpnDeconsolidated(
+        string LpnId,
+        DateTime OccurredOn,
+        string CreatedBy,
+        string StationId
+    ) : IDomainEvent;
+
     public record LpnLocationChanged(
         string LpnId,
         string NewLocation,

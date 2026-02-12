@@ -31,18 +31,31 @@ namespace Victoria.API.Controllers
                 .Where(x => x.CurrentLocationId != null)
                 .ToListAsync();
 
-            var occupancyMap = lpnsInLocations
-                .Where(x => x.CurrentLocationId != null)
+            var activeLpnMap = lpnsInLocations
+                .Where(x => x.Status == LpnStatus.Active)
                 .GroupBy(x => x.CurrentLocationId)
                 .ToDictionary(g => g.Key!, g => g.Count());
+
+            var unitCountMap = lpnsInLocations
+                .GroupBy(x => x.CurrentLocationId)
+                .ToDictionary(g => g.Key!, g => g.Sum(x => x.Quantity));
 
             var result = locations.Select(l => {
                 var codeVal = (l.Code != null && !string.IsNullOrEmpty(l.Code.Value)) ? l.Code.Value : l.Id;
                 var zoneVal = l.Code?.Zone ?? (l.Id.Contains("-") ? l.Id.Split('-')[0] : "MAIN");
                 
-                // Si ambos son vacíos, algo está mal en la hidratación
                 if (string.IsNullOrEmpty(codeVal)) {
-                    codeVal = l.Id; // Último recurso
+                    codeVal = l.Id;
+                }
+
+                int displayCount;
+                if (l.Profile == LocationProfile.Picking)
+                {
+                    displayCount = (codeVal != null && unitCountMap.TryGetValue(codeVal, out var q)) ? q : 0;
+                }
+                else
+                {
+                    displayCount = (codeVal != null && activeLpnMap.TryGetValue(codeVal, out var c)) ? c : 0;
                 }
 
                 return new
@@ -56,22 +69,20 @@ namespace Victoria.API.Controllers
                     maxWeight = l.MaxWeight,
                     maxVolume = l.MaxVolume,
                     barcode = string.IsNullOrEmpty(l.Barcode) ? codeVal : l.Barcode,
-                    occupancyStatus = GetOccupancyStatus(l, (codeVal != null && occupancyMap.TryGetValue(codeVal, out var count)) ? count : 0),
-                    lpnCount = (codeVal != null && occupancyMap.TryGetValue(codeVal, out var c)) ? c : 0
+                    occupancyStatus = GetOccupancyStatus(l, displayCount),
+                    lpnCount = displayCount
                 };
             });
 
             return Ok(result);
         }
 
-        private string GetOccupancyStatus(Location loc, int lpnCount)
+        private string GetOccupancyStatus(Location loc, int count)
         {
-            if (lpnCount == 0) return "Empty";
+            if (count == 0) return "Empty";
             
-            // Logic: If it's a Reserve location (usually 1 pallet per location), 1 LPN = Full
-            if (loc.Profile == LocationProfile.Reserve && lpnCount >= 1) return "Full";
+            if (loc.Profile == LocationProfile.Reserve && count >= 1) return "Full";
             
-            // For Picking, it could be Partial
             return "Partial";
         }
 

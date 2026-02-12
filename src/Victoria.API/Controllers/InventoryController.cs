@@ -5,6 +5,7 @@ using Marten;
 using Microsoft.AspNetCore.Mvc;
 using Victoria.Infrastructure.Projections;
 using Victoria.Inventory.Application.Services;
+using Victoria.Inventory.Domain.Aggregates;
 
 namespace Victoria.API.Controllers
 {
@@ -58,6 +59,38 @@ namespace Victoria.API.Controllers
                 return NotFound(new { message = $"No inventory found in location {locationId}" });
             }
             return Ok(view);
+        }
+        [HttpGet("by-location")]
+        public async Task<ActionResult> GetInventoryByLocationReport()
+        {
+            var allLpns = await _session.Query<Lpn>().ToListAsync();
+            
+            // Fetch product names to include descriptions
+            var skus = allLpns.Select(x => x.Sku.Value).Distinct().ToList();
+            var products = await _session.Query<Product>()
+                .Where(x => x.Sku.In(skus))
+                .ToListAsync();
+            // DEFENSIVE: Handle potential duplicate SKUs in master data
+            var productMap = products.GroupBy(p => p.Sku).ToDictionary(g => g.Key, g => g.First().Name);
+
+            var report = allLpns
+                .Where(x => !string.IsNullOrEmpty(x.CurrentLocationId))
+                .GroupBy(x => x.CurrentLocationId)
+                .Select(g => new
+                {
+                    locationId = g.Key,
+                    totalQty = g.Sum(x => x.Quantity),
+                    lpnCount = g.Count(x => x.Status == LpnStatus.Active),
+                    items = g.GroupBy(x => x.Sku.Value)
+                             .Select(sg => new {
+                                 sku = sg.Key,
+                                 description = productMap.TryGetValue(sg.Key, out var name) ? name : "Sin descripción",
+                                 quantity = sg.Sum(x => x.Quantity)
+                             }).ToList()
+                })
+                .ToList();
+
+            return Ok(report);
         }
     }
 }

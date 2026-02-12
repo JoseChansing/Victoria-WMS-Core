@@ -38,6 +38,7 @@ namespace Victoria.API.Controllers
             _logger = logger;
         }
 
+
         [HttpGet]
         public async Task<IActionResult> GetProducts(
             [FromQuery] int page = 1,
@@ -162,5 +163,124 @@ namespace Victoria.API.Controllers
 
             return Ok(new { message = $"Producto {sku} eliminado correctamente." });
         }
+
+        [HttpPost("{sku}/packaging")]
+        public async Task<IActionResult> CreatePackaging(string sku, [FromBody] PackagingRequest request)
+        {
+            try 
+            {
+                var product = await _session.LoadAsync<Product>(sku);
+                if (product == null) return NotFound(new { error = "Producto no encontrado localmente." });
+
+                var values = new Dictionary<string, object>
+                {
+                    { "name", request.Name },
+                    { "qty_bulk", (double)request.Qty },
+                    { "product_ids", new object[] { new object[] { 6, 0, new object[] { product.OdooId } } } }, // Many2Many relation
+                    { "l_cm", (double)request.Length },
+                    { "w_cm", (double)request.Width },
+                    { "h_cm", (double)request.Height },
+                    { "weight", (double)request.Weight }
+                };
+
+                var result = await _odooClient.ExecuteActionAsync("stock.move.bulk", "create", new object[] { values });
+                if (result == null) return BadRequest(new { error = "Error al crear empaque en Odoo." });
+
+                int odooId = int.TryParse(result.ToString(), out var id) ? id : 0;
+
+                await _productSync.SyncSingleAsync(_odooClient, sku);
+                return Ok(new { message = "Empaque creado correctamente.", odooId });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[API-ERROR] CreatePackaging failed.");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        [HttpPut("{sku}/packaging/{odooId}")]
+        public async Task<IActionResult> UpdatePackaging(string sku, int odooId, [FromBody] PackagingRequest request)
+        {
+            try 
+            {
+                var values = new Dictionary<string, object>
+                {
+                    { "name", request.Name },
+                    { "qty_bulk", (double)request.Qty },
+                    { "l_cm", (double)request.Length },
+                    { "w_cm", (double)request.Width },
+                    { "h_cm", (double)request.Height },
+                    { "weight", (double)request.Weight }
+                };
+
+                // Odoo Write expects ([ids], values)
+                var success = await _odooClient.ExecuteAsync("stock.move.bulk", "write", new object[] { new object[] { odooId }, values });
+                if (!success) return BadRequest(new { error = "Error al actualizar empaque en Odoo o no se detectaron cambios." });
+
+                await _productSync.SyncSingleAsync(_odooClient, sku);
+                return Ok(new { message = "Empaque actualizado correctamente." });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[API-ERROR] UpdatePackaging failed.");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        [HttpDelete("{sku}/packaging/{odooId}")]
+        public async Task<IActionResult> DeletePackaging(string sku, int odooId)
+        {
+            try 
+            {
+                // Odoo Unlink expects ([ids])
+                var success = await _odooClient.ExecuteAsync("stock.move.bulk", "unlink", new object[] { new object[] { odooId } });
+                if (!success) return BadRequest(new { error = "Error al eliminar empaque en Odoo." });
+
+                await _productSync.SyncSingleAsync(_odooClient, sku);
+                return Ok(new { message = "Empaque eliminado correctamente." });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[API-ERROR] DeletePackaging failed.");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        [HttpPost("sync/force")]
+        public async Task<IActionResult> ForceFullSync()
+        {
+            try
+            {
+                _logger.LogWarning("[MANUAL-TRIGGER] Forcing FULL Product Sync requested via API.");
+                
+                // 1. Reset Sync State
+                var syncState = await _session.LoadAsync<SyncState>("ProductSync");
+                if (syncState != null)
+                {
+                    syncState.LastSyncTimestamp = DateTime.MinValue; // Force logic in Service to treat it as new
+                    _session.Store(syncState);
+                    await _session.SaveChangesAsync();
+                }
+
+                // 2. Trigger Sync
+                var count = await _productSync.SyncAllAsync(_odooClient);
+                return Ok(new { message = $"Sincronización masiva completada. Productos procesados: {count}" });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[API-ERROR] ForceFullSync failed.");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+    }
+
+    public class PackagingRequest
+    {
+        public string Name { get; set; } = string.Empty;
+        public decimal Qty { get; set; }
+        public decimal Weight { get; set; }
+        public decimal Length { get; set; }
+        public decimal Width { get; set; }
+        public decimal Height { get; set; }
     }
 }

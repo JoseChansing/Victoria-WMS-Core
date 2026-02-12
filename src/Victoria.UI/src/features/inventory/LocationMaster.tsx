@@ -312,7 +312,9 @@ export const LocationMaster = () => {
                                                 }`} />
                                             <span className="text-sm font-bold text-slate-300 capitalize">
                                                 {loc.occupancyStatus}
-                                                <span className="text-[10px] text-slate-500 ml-1">({loc.lpnCount} LPNs)</span>
+                                                <span className="text-[10px] text-slate-500 ml-1">
+                                                    ({loc.lpnCount} {loc.profile === 'Picking' ? 'Units' : 'LPNs'})
+                                                </span>
                                             </span>
                                         </div>
                                     </td>
