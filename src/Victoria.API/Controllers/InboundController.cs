@@ -23,6 +23,7 @@ namespace Victoria.API.Controllers
     {
         private readonly IDocumentSession _session;
         private readonly ReceiveLpnHandler _handler;
+        private readonly VoidLpnHandler _voidHandler;
         private readonly IProductService _productSync;
         private readonly IInboundService _orderSync;
         private readonly IOdooRpcClient _odooClient;
@@ -32,6 +33,7 @@ namespace Victoria.API.Controllers
         public InboundController(
             IDocumentSession session, 
             ReceiveLpnHandler handler,
+            VoidLpnHandler voidHandler,
             IProductService productSync,
             IInboundService orderSync,
             IOdooRpcClient odooClient,
@@ -40,6 +42,7 @@ namespace Victoria.API.Controllers
         {
             _session = session;
             _handler = handler;
+            _voidHandler = voidHandler;
             _productSync = productSync;
             _orderSync = orderSync;
             _odooClient = odooClient;
@@ -56,10 +59,16 @@ namespace Victoria.API.Controllers
                     .Where(x => x.Status == "Pending")
                     .ToListAsync();
 
+                var todayString = DateTime.UtcNow.ToString("yyyy-MM-dd");
+                var processedToday = await _session.Query<InboundOrder>()
+                    .Where(x => x.Status == "Completed" && x.ProcessedDate == todayString)
+                    .CountAsync();
+
                 return Ok(new
                 {
                     PendingOrders = orders.Count,
                     UnitsToReceive = orders.Sum(o => o.TotalUnits),
+                    ProcessedToday = processedToday,
                     HighPriorityCount = 0 // Mock por ahora
                 });
             }
@@ -154,6 +163,13 @@ namespace Victoria.API.Controllers
 
                 if (request.IsCrossdock.HasValue) order.IsCrossdock = request.IsCrossdock.Value;
                 if (request.TargetOutboundOrder != null) order.TargetOutboundOrder = request.TargetOutboundOrder;
+                
+                // BACKDOOR: Allow status override for recovery
+                if (!string.IsNullOrEmpty(request.Status)) 
+                {
+                     order.Status = request.Status;
+                     _logger.LogWarning($"[MANUAL-Override] Order {id} status changed to {request.Status}");
+                }
 
                 _session.Store(order);
                 await _session.SaveChangesAsync();
@@ -171,6 +187,7 @@ namespace Victoria.API.Controllers
         {
             public bool? IsCrossdock { get; set; }
             public string? TargetOutboundOrder { get; set; }
+            public string? Status { get; set; } // Added for Manual Recovery
         }
 
         [HttpPost("receive")]
@@ -180,6 +197,15 @@ namespace Victoria.API.Controllers
             {
                 var order = await _session.LoadAsync<InboundOrder>(request.OrderId);
                 if (order == null) return NotFound("Order not found");
+
+                // SECURITY: Prevent modifications if order is closed, cancelled or orphaned
+                if (order.Status == "Completed" || order.Status == "Cancelled" || order.Status == "Orphaned")
+                {
+                    if (order.Status == "Orphaned") {
+                        return Conflict(new { error = "ORDER_ORPHANED", message = "La orden fue cancelada externamente en Odoo y tiene bultos recibidos. Operación bloqueada para nueva mercancia." });
+                    }
+                    return BadRequest(new { error = $"Order is {order.Status} and cannot be modified." });
+                }
 
                 // Build Command for the Handler
                 var command = new ReceiveLpnCommand
@@ -201,20 +227,74 @@ namespace Victoria.API.Controllers
                 };
 
                 // Execute logic via Handler
-                string logPath = Path.Combine(Directory.GetCurrentDirectory(), "reception_debug.log");
-                string logLine = $"[{DateTime.Now}] Receiving {request.Sku ?? request.RawScan}. IsPhotoSample: {request.IsPhotoSample}, Station: {command.StationId}\n";
-                await System.IO.File.AppendAllTextAsync(logPath, logLine);
-                
                 _logger.LogInformation($"[INBOUND-API] Received request for {request.Sku ?? request.RawScan}. IsPhotoSample: {request.IsPhotoSample}");
                 
                 var generatedIds = await _handler.Handle(command);
 
-                // 3. Update Order Line
-                var skuToUpdate = request.Sku ?? request.RawScan;
-                var line = order.Lines.FirstOrDefault(l => l.Sku == skuToUpdate);
+                // --- PACKAGING SYNC LOGIC ---
+                if (!string.IsNullOrEmpty(request.PackagingAction) && (request.Weight.HasValue || request.Length.HasValue || request.Width.HasValue || request.Height.HasValue))
+                {
+                    try 
+                    {
+                        var product = await _session.LoadAsync<Product>(request.Sku ?? request.RawScan);
+                        if (product != null)
+                        {
+                            if (request.PackagingAction == "update_odoo" && request.SelectedPackagingId.HasValue)
+                            {
+                                _logger.LogInformation("[INBOUND] Actualizando empaque {PkgId} en Odoo...", request.SelectedPackagingId.Value);
+                                await _odooAdapter.UpdatePackagingAsync(request.SelectedPackagingId.Value, 
+                                    request.UnitsPerLpn.ToString(), 
+                                    request.UnitsPerLpn,
+                                    request.Weight ?? 0, request.Length ?? 0, request.Width ?? 0, request.Height ?? 0);
+                            }
+                            else if (request.PackagingAction == "create_new")
+                            {
+                                if (product.OdooTemplateId == 0)
+                                {
+                                    _logger.LogInformation("[INBOUND] Product {Sku} missing Template ID. Syncing...", request.Sku);
+                                    await _productSync.SyncSingleAsync(_odooClient, request.Sku ?? request.RawScan);
+                                    product = await _session.LoadAsync<Product>(request.Sku ?? request.RawScan);
+                                }
+
+                                if (product != null && product.OdooTemplateId != 0)
+                                {
+                                    _logger.LogInformation("[INBOUND] Creando nuevo empaque para {Sku} en Odoo...", request.Sku);
+                                    await _odooAdapter.CreatePackagingAsync(product.OdooId, product.OdooTemplateId,
+                                        request.UnitsPerLpn.ToString(), 
+                                        request.UnitsPerLpn,
+                                        request.Weight ?? 0, request.Length ?? 0, request.Width ?? 0, request.Height ?? 0);
+                                }
+                                else
+                                {
+                                    _logger.LogWarning("[INBOUND] Falló obtención de Template ID para {Sku}. No se pudo crear empaque en Odoo.", request.Sku);
+                                }
+                            }
+
+                            // Trigger refresco local
+                            await _productSync.SyncSingleAsync(_odooClient, product.Sku);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "[INBOUND] Error sincronizando empaque con Odoo durante recepción.");
+                        // No bloqueamos el recibo por esto, pero lo logueamos
+                    }
+                }
+
+                // 3. Update Order Line Case-Insensitively
+                var skuToUpdate = (request.Sku ?? request.RawScan)?.Trim().ToUpperInvariant();
+                var line = order.Lines.FirstOrDefault(l => l.Sku.Trim().ToUpperInvariant() == skuToUpdate);
                 if (line != null)
                 {
                     line.ReceivedQty += request.Quantity;
+
+                    // Automatically transition to "In Progress" on first receipt
+                    if (order.Status == "Pending")
+                    {
+                        _logger.LogInformation("[INBOUND] Transitioning order {OrderId} to In Progress (Receiving)", request.OrderId);
+                        order.Status = "In Progress";
+                    }
+
                     _session.Store(order);
                     await _session.SaveChangesAsync();
                 }
@@ -226,6 +306,58 @@ namespace Victoria.API.Controllers
                 _logger.LogError(ex, "[API-ERROR] Receive failed for order {OrderId}", request.OrderId);
                 return BadRequest(new { error = ex.Message });
             }
+        }
+
+        [HttpPost("lpn/{lpnId}/void")]
+        public async Task<IActionResult> VoidLpn(string lpnId, [FromBody] VoidLpnRequest request)
+        {
+            try
+            {
+                var lpn = await _session.LoadAsync<Lpn>(lpnId);
+                if (lpn == null) return NotFound("LPN not found");
+
+                if (!string.IsNullOrEmpty(lpn.SelectedOrderId))
+                {
+                    var order = await _session.LoadAsync<InboundOrder>(lpn.SelectedOrderId);
+                    if (order != null && (order.Status == "Completed" || order.Status == "Cancelled"))
+                    {
+                        return BadRequest(new { error = $"Order {order.OrderNumber} is {order.Status}. LPN cannot be voided." });
+                    }
+                }
+
+                var command = new VoidLpnCommand(lpnId, request.Reason, "System", request.StationId);
+                await _voidHandler.Handle(command);
+
+                // --- AUTO-CANCELLATION LOGIC FOR ORPHANED ORDERS ---
+                if (!string.IsNullOrEmpty(lpn.SelectedOrderId))
+                {
+                    var order = await _session.LoadAsync<InboundOrder>(lpn.SelectedOrderId);
+                    if (order != null && order.Status == "Orphaned")
+                    {
+                        var remainingUnits = order.Lines.Sum(x => x.ReceivedQty);
+                        if (remainingUnits <= 0)
+                        {
+                            _logger.LogInformation("[INBOUND] Order {OrderNumber} was Orphaned and is now EMPTY. Auto-cancelling as requested.", order.OrderNumber);
+                            order.Status = "Cancelled";
+                            _session.Store(order);
+                            await _session.SaveChangesAsync();
+                        }
+                    }
+                }
+
+                return Ok(new { message = $"LPN {lpnId} voided successfully" });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[API-ERROR] Void failed for LPN {LpnId}", lpnId);
+                return BadRequest(new { error = ex.Message });
+            }
+        }
+
+        public class VoidLpnRequest
+        {
+            public string Reason { get; set; } = string.Empty;
+            public string StationId { get; set; } = string.Empty;
         }
 
         [HttpPost("reset/{orderId}")]
@@ -309,13 +441,18 @@ namespace Victoria.API.Controllers
                 if (moveQuantities.Count == 0)
                 {
                     _logger.LogWarning("[INBOUND] No Odoo Move IDs found for order {OrderNumber}. Local closing only.", order.OrderNumber);
+                    Console.WriteLine($"[DEBUG-CLOSE] No moves found. Lines: {order.Lines.Count}");
                 }
                 else
                 {
                     // 3. Trigger Odoo Sync (Validate + Backorder)
                     _logger.LogInformation("[INBOUND] Synchronizing with Odoo Picking {PickingId}...", pickingId);
+                    Console.WriteLine($"[DEBUG-CLOSE] Calling ConfirmReceiptAsync for Picking {pickingId} with {moveQuantities.Count} moves...");
+                    
                     bool odooSuccess = await _odooAdapter.ConfirmReceiptAsync(pickingId, moveQuantities);
                     
+                    Console.WriteLine($"[DEBUG-CLOSE] ConfirmReceiptAsync returned: {odooSuccess}");
+
                     if (!odooSuccess)
                     {
                         return BadRequest(new { Error = "La sincronización con Odoo no confirmó éxito. Verifique directamente en Odoo." });
@@ -395,6 +532,12 @@ namespace Victoria.API.Controllers
                         _ => "STAGE-PICKING" // Default
                     };
 
+                    // OVERRIDE: Everything from DOCK-LPN goes to STAGE-RESERVE (User request)
+                    if (lpn.CurrentLocationId == "DOCK-LPN")
+                    {
+                        targetLocation = "STAGE-RESERVE";
+                    }
+
                     lpn.Putaway(targetLocation, "SYS", "ODOO-SYNC-CLOSE");
                     _session.Store(lpn);
                 }
@@ -402,6 +545,7 @@ namespace Victoria.API.Controllers
 
             // 4. Mark order as closed/synced
             order.Status = "Completed";
+            order.ProcessedDate = DateTime.UtcNow.ToString("yyyy-MM-dd");
             _session.Store(order);
 
             await _session.SaveChangesAsync();
@@ -434,6 +578,101 @@ namespace Victoria.API.Controllers
                 return BadRequest(new { Error = ex.Message });
             }
         }
+
+        [HttpGet("debug/inspect-reception")]
+        public async Task<IActionResult> DebugInspectReception([FromQuery] string orderNumber)
+        {
+            try
+            {
+                var order = await _session.Query<InboundOrder>()
+                    .FirstOrDefaultAsync(o => o.OrderNumber == orderNumber);
+
+                if (order == null) return NotFound($"Order {orderNumber} not found");
+
+                var lpns = await _session.Query<Lpn>()
+                    .Where(l => l.SelectedOrderId == order.Id)
+                    .Select(l => new { l.Id, l.Sku, l.CurrentLocationId, l.Status })
+                    .ToListAsync();
+
+                return Ok(new { 
+                    Order = order.OrderNumber, 
+                    Lpns = lpns 
+                });
+            }
+            catch (Exception ex)
+            {
+                 return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        [HttpDelete("debug/fix-reception")]
+        public async Task<IActionResult> DebugFixReception([FromQuery] string orderNumber)
+        {
+            try
+            {
+                var order = await _session.Query<InboundOrder>()
+                    .FirstOrDefaultAsync(o => o.OrderNumber == orderNumber);
+
+                if (order == null) return NotFound($"Order {orderNumber} not found");
+
+                // Find LPNs for this order
+                var lpns = await _session.Query<Lpn>()
+                    .Where(l => l.SelectedOrderId == order.Id)
+                    .ToListAsync();
+
+                if (!lpns.Any()) return Ok("No LPNs found for this order.");
+
+                _logger.LogWarning($"[FIX] Deleting {lpns.Count} LPNs for order {orderNumber}");
+
+                foreach (var lpn in lpns)
+                {
+                    // Correct Order Line
+                    var line = order.Lines.FirstOrDefault(x => x.Sku == lpn.Sku.Value);
+                    if (line != null)
+                    {
+                        line.ReceivedQty = Math.Max(0, line.ReceivedQty - lpn.Quantity);
+                    }
+
+                    // Delete LPN
+                    _session.Delete(lpn);
+                }
+
+                _session.Store(order);
+                await _session.SaveChangesAsync();
+
+                return Ok(new { 
+                    Message = $"Deleted {lpns.Count} LPNs and updated order quantities.", 
+                    DeletedLpns = lpns.Select(x => x.Id) 
+                });
+            }
+            catch (Exception ex)
+            {
+                 return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        [HttpGet("debug/odoo-status/{id}")]
+        public async Task<IActionResult> DebugGetOdooStatus(long id)
+        {
+             try 
+             {
+                // Inspect raw Odoo status
+                var result = await _odooClient.SearchAndReadAsync<object>("stock.picking",
+                    new object[][] { new object[] { "id", "=", id } }, 
+                    new string[] { "name", "state", "date_done", "picking_type_code", "move_ids" });
+
+                // Check for created backorders
+                var backorders = await _odooClient.SearchAndReadAsync<object>("stock.picking",
+                    new object[][] { new object[] { "backorder_id", "=", id } },
+                    new string[] { "name", "state" });
+
+                return Ok(new { Picking = result, Backorders = backorders });
+             }
+             catch(Exception ex)
+             {
+                 return BadRequest(ex.Message);
+             }
+        }
     }
 
     public class ReceiveRequest
@@ -454,5 +693,9 @@ namespace Victoria.API.Controllers
         public double? Height { get; set; }
         [JsonPropertyName("isPhotoSample")]
         public bool IsPhotoSample { get; set; }
+
+        // Odoo Packaging Sync
+        public string? PackagingAction { get; set; } // "update_odoo" or "create_new"
+        public int? SelectedPackagingId { get; set; }
     }
 }

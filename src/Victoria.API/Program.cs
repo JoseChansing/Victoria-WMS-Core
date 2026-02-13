@@ -74,6 +74,7 @@ builder.Services.AddScoped<Victoria.Inventory.Application.Services.OutboundOrder
 builder.Services.AddScoped<Victoria.Inventory.Application.Services.WaveService>();
 builder.Services.AddScoped<Victoria.Inventory.Application.Services.TaskService>();
 builder.Services.AddScoped<ReceiveLpnHandler>();
+builder.Services.AddScoped<VoidLpnHandler>();
 builder.Services.AddScoped<PutawayLpnHandler>();
 builder.Services.AddScoped<AllocateOrderHandler>();
 builder.Services.AddScoped<PickLpnHandler>();
@@ -85,7 +86,8 @@ builder.Services.AddScoped<Victoria.Inventory.Application.Services.InventorySync
 builder.Services.AddSingleton<Victoria.Core.Messaging.IMessageBus, Victoria.Infrastructure.Messaging.InMemoryMessageBus>();
 
 // Typed Client Registration (Senior Best Practice)
-builder.Services.AddHttpClient<Victoria.Core.Interfaces.IOdooRpcClient, Victoria.Infrastructure.Integration.Odoo.OdooRpcClient>();
+builder.Services.AddHttpClient<Victoria.Core.Interfaces.IOdooRpcClient, Victoria.Infrastructure.Integration.Odoo.OdooRpcClient>()
+    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(300));
 
 // Explicit Scoped Registrations for Persistence/Sync
 builder.Services.AddScoped<Victoria.Core.Interfaces.IProductService, Victoria.Infrastructure.Integration.Odoo.ProductSyncService>();

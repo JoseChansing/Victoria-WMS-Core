@@ -73,7 +73,7 @@ namespace Victoria.Infrastructure.Projections
         {
             Identity<InventoryImportedFromOdoo>(e => e.TargetLocation);
             Identity<LpnLocationChanged>(e => e.NewLocation);
-            Identity<LpnCreated>(e => "DOCK-UNITS"); // Default
+            Identity<LpnCreated>(e => "DOCK-LPN"); // Default
         }
 
         public void Apply(InventoryImportedFromOdoo e, LocationInventoryView view)

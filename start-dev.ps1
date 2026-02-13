@@ -20,4 +20,4 @@ Write-Host "FRONT Starting Frontend (UI)..." -ForegroundColor Cyan
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd 'src/Victoria.UI'; npm run dev" -WorkingDirectory "$PSScriptRoot"
 Write-Host "✅ Frontend started in new window." -ForegroundColor Green
 
-Write-Host "✨ Environment is ready! Backend: http://localhost:5000 | Frontend: http://localhost:5173" -ForegroundColor Yellow
+Write-Host "Environment is ready!" -ForegroundColor Yellow

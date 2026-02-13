@@ -39,10 +39,50 @@ Levanta el entorno completo (Core + Redis + Postgres + ERP Simulator) con un sol
 docker-compose up -d
 ```
 
-### Primeros Pasos
-1. **Sync Maestros**: POST `/simulate/odoo/sync-product`.
-2. **Recepción**: POST `/api/v1/inventory/receipt`.
-3. **Audit**: GET `/api/v1/rfid/audit`.
+## 👨‍💻 Desarrollo Local (Localhost)
+
+Si deseas ejecutar el código fuente localmente (**Backend y Frontend**) para depuración:
+
+### 1. Infraestructura (BD + Redis)
+Levanta solo la base de datos y caché:
+```bash
+docker-compose -f docker-compose.local.yml up -d
+```
+
+### 2. Backend (API)
+Es CRÍTICO ejecutar en modo `Development` para ver errores detallados y habilitar Swagger.
+**Nota:** La API *debe* escuchar en el puerto `5242` (`http://localhost:5242`) para que el Frontend Proxy funcione. Si inicia en el puerto 5000, verifica que exista el archivo `Properties/launchSettings.json`.
+
+```bash
+cd src/Victoria.API
+dotnet run --environment Development
+```
+*La API escuchará en: `http://localhost:5242`*
+
+### 3. Frontend (UI)
+```bash
+cd src/Victoria.UI
+# cmd /c "npm run dev" (si usas Windows/CMD)
+npm run dev
+```
+*La UI escuchará en: `http://localhost:5173`*
+
+### 4. Solución de Problemas Comunes
+
+**🔴 Error 500 / 502 Bad Gateway en Frontend**
+- **Causa**: El Backend inició en el puerto incorrecto (5000 en lugar de 5242).
+- **Solución**:
+  1. Detén el backend (`Ctrl+C`).
+  2. Asegúrate de que existe `src/Victoria.API/Properties/launchSettings.json`.
+  3. Ejecuta `dotnet run` (sin argumentos) o `dotnet run --launch-profile http`.
+  4. Verifica que la consola diga: `Now listening on: http://localhost:5242`.
+
+**🔴 Connection Refused (localhost ha rechazado la conexión)**
+- **Causa**: El servidor de Frontend (Vite) no está corriendo.
+- **Solución**:
+  1. Ve a `src/Victoria.UI`.
+  2. Ejecuta `npm run dev`.
+  3. Verifica que la consola diga: `Local: http://localhost:5173/`.
 
 ## 📚 Documentación Técnica
 - [Architecture Decision Records (ADRs)](./docs/architecture/README.md)

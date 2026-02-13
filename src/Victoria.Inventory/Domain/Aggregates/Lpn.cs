@@ -107,6 +107,25 @@ namespace Victoria.Inventory.Domain.Aggregates
             AllocatedQuantity += qty;
         }
 
+        public void Void(string reason, string userId, string stationId)
+        {
+            if (Status == LpnStatus.Voided)
+                throw new InvalidOperationException("LPN is already voided.");
+            
+            if (Status == LpnStatus.Dispatched || Status == LpnStatus.Shipped)
+                throw new InvalidOperationException($"Cannot void LPN in status {Status}. It must be within the warehouse.");
+
+            var @event = new LpnVoided(Id, reason, DateTime.UtcNow, userId, stationId);
+            Apply(@event);
+            _changes.Add(@event);
+        }
+
+        public void Apply(LpnVoided e)
+        {
+            Status = LpnStatus.Voided;
+            Quantity = 0;
+        }
+
         public void ReleaseReservation(int qty)
         {
             AllocatedQuantity -= qty;
@@ -284,6 +303,7 @@ namespace Victoria.Inventory.Domain.Aggregates
         Quarantine,
         Blocked,
         Consumed,
-        Active
+        Active,
+        Voided
     }
 }

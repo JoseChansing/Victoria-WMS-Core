@@ -22,6 +22,7 @@ namespace Victoria.API.Controllers
         private readonly IOdooRpcClient _odooClient;
         private readonly IProductService _productSync;
         private readonly IInboundService _inboundSync;
+        private readonly IOdooAdapter _odooAdapter;
         private readonly ILogger<ProductsController> _logger;
 
         public ProductsController(
@@ -29,12 +30,14 @@ namespace Victoria.API.Controllers
             IOdooRpcClient odooClient, 
             IProductService productSync,
             IInboundService inboundSync,
+            IOdooAdapter odooAdapter,
             ILogger<ProductsController> logger)
         {
             _session = session;
             _odooClient = odooClient;
             _productSync = productSync;
             _inboundSync = inboundSync;
+            _odooAdapter = odooAdapter;
             _logger = logger;
         }
 
@@ -113,6 +116,22 @@ namespace Victoria.API.Controllers
             }
         }
 
+        [HttpGet("{sku}")]
+        public async Task<IActionResult> GetProductBySku(string sku)
+        {
+            try
+            {
+                var product = await _session.LoadAsync<Product>(sku);
+                if (product == null) return NotFound(new { error = "Producto no encontrado." });
+                return Ok(product);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[API-ERROR] GetProductBySku failed for {Sku}", sku);
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
 
 
         // Constraint :minlength(5) ensures 'meta' (4 chars) is never caught here
@@ -170,31 +189,29 @@ namespace Victoria.API.Controllers
             try 
             {
                 var product = await _session.LoadAsync<Product>(sku);
-                if (product == null) return NotFound(new { error = "Producto no encontrado localmente." });
-
-                var values = new Dictionary<string, object>
+                
+                if (product == null || product.OdooTemplateId == 0)
                 {
-                    { "name", request.Name },
-                    { "qty_bulk", (double)request.Qty },
-                    { "product_ids", new object[] { new object[] { 6, 0, new object[] { product.OdooId } } } }, // Many2Many relation
-                    { "l_cm", (double)request.Length },
-                    { "w_cm", (double)request.Width },
-                    { "h_cm", (double)request.Height },
-                    { "weight", (double)request.Weight }
-                };
+                    _logger.LogInformation("[API] Product {Sku} missing or has no Template ID locally. Syncing from Odoo...", sku);
+                    await _productSync.SyncSingleAsync(_odooClient, sku);
+                    product = await _session.LoadAsync<Product>(sku); // Reload
+                    
+                    if (product == null) return NotFound(new { error = "Producto no encontrado en Odoo ni localmente." });
+                    if (product.OdooTemplateId == 0) return BadRequest(new { error = "No se pudo obtener el ID de plantilla de Odoo para este producto." });
+                }
 
-                var result = await _odooClient.ExecuteActionAsync("stock.move.bulk", "create", new object[] { values });
-                if (result == null) return BadRequest(new { error = "Error al crear empaque en Odoo." });
-
-                int odooId = int.TryParse(result.ToString(), out var id) ? id : 0;
+                var odooId = await _odooAdapter.CreatePackagingAsync(product.OdooId, product.OdooTemplateId, request.Name, (double)request.Qty, (double)request.Weight, (double)request.Length, (double)request.Width, (double)request.Height);
+                if (odooId <= 0) return BadRequest(new { error = "Error al crear empaque en Odoo." });
 
                 await _productSync.SyncSingleAsync(_odooClient, sku);
                 return Ok(new { message = "Empaque creado correctamente.", odooId });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "[API-ERROR] CreatePackaging failed.");
-                return StatusCode(500, new { error = ex.Message });
+                _logger.LogError(ex, "[API-ERROR] CreatePackaging failed for SKU {Sku}", sku);
+                var message = ex.Message;
+                if (ex.InnerException != null) message += " | " + ex.InnerException.Message;
+                return StatusCode(500, new { error = message });
             }
         }
 
@@ -203,18 +220,7 @@ namespace Victoria.API.Controllers
         {
             try 
             {
-                var values = new Dictionary<string, object>
-                {
-                    { "name", request.Name },
-                    { "qty_bulk", (double)request.Qty },
-                    { "l_cm", (double)request.Length },
-                    { "w_cm", (double)request.Width },
-                    { "h_cm", (double)request.Height },
-                    { "weight", (double)request.Weight }
-                };
-
-                // Odoo Write expects ([ids], values)
-                var success = await _odooClient.ExecuteAsync("stock.move.bulk", "write", new object[] { new object[] { odooId }, values });
+                var success = await _odooAdapter.UpdatePackagingAsync(odooId, request.Name, (double)request.Qty, (double)request.Weight, (double)request.Length, (double)request.Width, (double)request.Height);
                 if (!success) return BadRequest(new { error = "Error al actualizar empaque en Odoo o no se detectaron cambios." });
 
                 await _productSync.SyncSingleAsync(_odooClient, sku);
@@ -223,7 +229,9 @@ namespace Victoria.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "[API-ERROR] UpdatePackaging failed.");
-                return StatusCode(500, new { error = ex.Message });
+                var message = ex.Message;
+                if (ex.InnerException != null) message += " | " + ex.InnerException.Message;
+                return StatusCode(500, new { error = message });
             }
         }
 

@@ -74,19 +74,17 @@ namespace Victoria.API.Controllers
             var productMap = products.GroupBy(p => p.Sku).ToDictionary(g => g.Key, g => g.First().Name);
 
             var report = allLpns
-                .Where(x => !string.IsNullOrEmpty(x.CurrentLocationId))
-                .GroupBy(x => x.CurrentLocationId)
-                .Select(g => new
+                .Where(x => !string.IsNullOrEmpty(x.CurrentLocationId) && x.Status != LpnStatus.Consumed && x.Status != LpnStatus.Voided)
+                .Select(lpn => new
                 {
-                    locationId = g.Key,
-                    totalQty = g.Sum(x => x.Quantity),
-                    lpnCount = g.Count(x => x.Status == LpnStatus.Active),
-                    items = g.GroupBy(x => x.Sku.Value)
-                             .Select(sg => new {
-                                 sku = sg.Key,
-                                 description = productMap.TryGetValue(sg.Key, out var name) ? name : "Sin descripción",
-                                 quantity = sg.Sum(x => x.Quantity)
-                             }).ToList()
+                    locationId = lpn.CurrentLocationId,
+                    lpnId = lpn.Id,
+                    sku = lpn.Sku.Value,
+                    description = productMap.TryGetValue(lpn.Sku.Value, out var name) ? name : "Sin descripción",
+                    quantity = lpn.Quantity,
+                    allocatedQuantity = lpn.AllocatedQuantity,
+                    status = (int)lpn.Status,
+                    lpnType = lpn.Type.ToString()
                 })
                 .ToList();
 

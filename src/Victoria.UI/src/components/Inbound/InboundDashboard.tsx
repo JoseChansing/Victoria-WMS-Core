@@ -1,20 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-    Truck,
-    Search,
-    Calendar,
-    ChevronLeft,
-    ChevronRight,
-    CheckCircle2,
-    Lock,
-    AlertCircle,
-    Clock,
-    CheckSquare,
-    Loader2,
-    Zap
-} from 'lucide-react';
+import { ArrowRight, Search, Filter, RefreshCw, Archive, AlertCircle, CheckCircle2, Clock, Calendar, Truck, Package, ChevronRight, MoreVertical, Zap, Lock, Info, AlertTriangle, XCircle, LayoutGrid, List, Settings, Eye, Loader2, ChevronLeft, CheckSquare } from 'lucide-react';
 import { useInbound } from '../../hooks/useInbound';
+import LpnManagementModal from './LpnManagementModal';
 
 const InboundDashboard: React.FC = () => {
     const navigate = useNavigate();
@@ -35,6 +23,9 @@ const InboundDashboard: React.FC = () => {
 
     // Success message state
     const [lastClosedOrder, setLastClosedOrder] = useState<string | null>(null);
+
+    // Supervisor tools
+    const [managingSkuForOrphan, setManagingSkuForOrphan] = useState<{ sku: string, orderId: string } | null>(null);
 
     // Filtering logic
     const filteredOrders = useMemo(() => {
@@ -108,6 +99,7 @@ const InboundDashboard: React.FC = () => {
             case 'Ready': return 'bg-corp-accent/40 text-blue-300 border-corp-secondary';
             case 'In Progress': return 'bg-amber-900/40 text-amber-500 border-amber-800 animate-pulse';
             case 'Completed': return 'bg-emerald-900/40 text-emerald-500 border-emerald-800';
+            case 'Orphaned': return 'bg-rose-900/60 text-white border-rose-500 animate-pulse font-black shadow-[0_0_15px_rgba(244,63,94,0.4)]';
             default: return 'bg-corp-base/50 text-slate-400 border-corp-secondary';
         }
     };
@@ -148,7 +140,7 @@ const InboundDashboard: React.FC = () => {
                         </div>
                         <div>
                             <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Today</p>
-                            <p className="text-xl font-bold text-white">12</p>
+                            <p className="text-xl font-bold text-white">{kpis?.processedToday ?? 0}</p>
                         </div>
                     </div>
                 </div>
@@ -254,7 +246,7 @@ const InboundDashboard: React.FC = () => {
                         </thead>
                         <tbody className="divide-y divide-corp-secondary/30">
                             {paginatedOrders.length > 0 ? paginatedOrders.map((order) => {
-                                const receivedUnits = order.lines.reduce((acc, l) => acc + l.receivedQty, 0);
+                                const receivedUnits = order.lines.reduce((acc: number, l: any) => acc + l.receivedQty, 0);
                                 const progress = Math.round((receivedUnits / order.totalUnits) * 100);
                                 const visualProgress = Math.min(100, progress);
 
@@ -300,20 +292,42 @@ const InboundDashboard: React.FC = () => {
                                                 {order.status !== 'Completed' && (
                                                     <button
                                                         onClick={() => handleOpenCrossdockConfig(order)}
-                                                        className={`p-2 rounded-xl transition-all border border-transparent ${order.isCrossdock ? 'text-blue-400 bg-blue-900/20 border-blue-800/40' : 'text-slate-400 hover:text-blue-400 hover:bg-blue-900/20 hover:border-blue-800/40'}`}
-                                                        title="Configurar Crossdock"
+                                                        disabled={order.status === 'Orphaned' || order.status === 'Cancelled'}
+                                                        className={`p-2 rounded-xl transition-all border border-transparent ${order.status === 'Orphaned' || order.status === 'Cancelled'
+                                                            ? 'text-slate-600 opacity-30 cursor-not-allowed'
+                                                            : order.isCrossdock
+                                                                ? 'text-blue-400 bg-blue-900/20 border-blue-800/40'
+                                                                : 'text-slate-400 hover:text-blue-400 hover:bg-blue-900/20 hover:border-blue-800/40'
+                                                            }`}
+                                                        title={order.status === 'Orphaned' ? "Order Orphaned - Actions Disabled" : "Configurar Crossdock"}
                                                     >
-                                                        <Zap className={`w-5 h-5 ${order.isCrossdock ? 'fill-blue-400' : ''}`} />
+                                                        <Zap className={`w-5 h-5 ${order.isCrossdock && order.status !== 'Orphaned' ? 'fill-blue-400' : ''}`} />
                                                     </button>
                                                 )}
                                                 {order.status !== 'Completed' && (
                                                     <button
                                                         onClick={() => handleCloseOrderRequest(order)}
-                                                        disabled={isClosing}
-                                                        className="p-2 text-slate-400 hover:text-emerald-400 hover:bg-emerald-900/40 rounded-xl transition-all disabled:opacity-50 border border-transparent hover:border-emerald-800/50"
-                                                        title="Finalize Receipt"
+                                                        disabled={isClosing || order.status === 'Orphaned' || order.status === 'Cancelled'}
+                                                        className={`p-2 transition-all rounded-xl border border-transparent ${order.status === 'Orphaned' || order.status === 'Cancelled'
+                                                            ? 'text-slate-600 opacity-30 cursor-not-allowed'
+                                                            : 'text-slate-400 hover:text-emerald-400 hover:bg-emerald-900/40 hover:border-emerald-800/50'
+                                                            }`}
+                                                        title={
+                                                            order.status === 'Orphaned' ? "Order Orphaned - Actions Disabled" :
+                                                                order.status === 'Cancelled' ? "Order Cancelled - Actions Disabled" :
+                                                                    "Finalize Receipt"
+                                                        }
                                                     >
                                                         {isClosing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Lock className="w-5 h-5" />}
+                                                    </button>
+                                                )}
+                                                {order.status === 'Orphaned' && (
+                                                    <button
+                                                        onClick={() => setManagingSkuForOrphan({ sku: order.lines[0]?.sku || '', orderId: order.orderNumber })}
+                                                        className="p-2 text-rose-400 hover:bg-rose-900/20 rounded-xl border border-rose-800/50 transition-all"
+                                                        title="Manage Orphaned Inventory (LPN Management)"
+                                                    >
+                                                        <Settings className="w-5 h-5" />
                                                     </button>
                                                 )}
                                                 <button
@@ -321,10 +335,17 @@ const InboundDashboard: React.FC = () => {
                                                         const receiveMode = order.isCrossdock ? 'crossdock' : 'standard';
                                                         navigate(`/inbound/receive/${receiveMode}/${order.id}`);
                                                     }}
-                                                    className="p-2 text-slate-400 hover:text-white hover:bg-corp-accent/40 rounded-xl transition-all border border-transparent hover:border-corp-secondary/50"
-                                                    title="Continue Receipt"
+                                                    className={`p-2 rounded-xl transition-all border border-transparent ${order.status === 'Orphaned' || order.status === 'Cancelled'
+                                                        ? 'text-slate-400 hover:text-white hover:bg-slate-700 hover:border-slate-500'
+                                                        : 'text-slate-400 hover:text-white hover:bg-corp-accent/40 hover:border-corp-secondary/50'
+                                                        }`}
+                                                    title={
+                                                        order.status === 'Orphaned' ? "View Details (Read-Only)" :
+                                                            order.status === 'Cancelled' ? "View Details (Read-Only)" :
+                                                                "Continue Receipt"
+                                                    }
                                                 >
-                                                    <ChevronRight className="w-5 h-5" />
+                                                    {order.status === 'Orphaned' || order.status === 'Cancelled' ? <Eye className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
                                                 </button>
                                             </div>
                                         </td>
@@ -435,7 +456,8 @@ const InboundDashboard: React.FC = () => {
                                 </button>
                                 <button
                                     onClick={handleFinalizeClose}
-                                    className="px-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] bg-emerald-600 text-white shadow-xl shadow-emerald-900/20 hover:bg-emerald-500 transition-all active:scale-95 border border-emerald-400/20"
+                                    disabled={confirmingOrder.status === 'Orphaned'}
+                                    className={`px-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all active:scale-95 border ${confirmingOrder.status === 'Orphaned' ? 'bg-slate-800 text-slate-600 border-slate-700 cursor-not-allowed' : 'bg-emerald-600 text-white shadow-xl shadow-emerald-900/20 hover:bg-emerald-500 border-emerald-400/20'}`}
                                 >
                                     Confirm Close
                                 </button>
@@ -509,6 +531,19 @@ const InboundDashboard: React.FC = () => {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {managingSkuForOrphan && (
+                <LpnManagementModal
+                    sku={managingSkuForOrphan.sku}
+                    orderId={managingSkuForOrphan.orderId}
+                    onClose={() => setManagingSkuForOrphan(null)}
+                    onVoidSuccess={() => {
+                        // Refresh will happen via hook update usually, 
+                        // but let's be safe
+                        navigate(window.location.pathname, { replace: true });
+                    }}
+                />
             )}
         </div>
     );

@@ -131,30 +131,21 @@ namespace Victoria.Infrastructure.Services
                     var odooClient = scope.ServiceProvider.GetRequiredService<IOdooRpcClient>();
                     var inboundService = scope.ServiceProvider.GetRequiredService<IInboundService>();
                     var productService = scope.ServiceProvider.GetRequiredService<IProductService>();
-
-                    /* 
-                    // 2.1 RESET STATE (FORCE FULL SYNC - TOTAL REACTIVATION)
-                    _logger.LogWarning("⚠️ [AUTO-START] EJECUTANDO PURGA TOTAL DE BASE DE DATOS (FACTORY RESET)...");
-                    
-                    // PURGE EVERYTHING (TOTAL REACTIVATION)
-                    session.DeleteWhere<Product>(x => true);
-                    session.DeleteWhere<SyncState>(x => true);
-                    session.DeleteWhere<InboundOrder>(x => true);
-                    session.DeleteWhere<Lpn>(x => true); // CRITICAL: REVISIÓN PROFUNDA - Consolidar Loose Stock
-                    session.DeleteWhere<Location>(x => true);
-                    
-                    await session.SaveChangesAsync();
-                    Console.WriteLine("🧹 [RESET] Purga completa: Productos, Estados, Ordenes, LPNs y Ubicaciones eliminados.");
-                    _logger.LogInformation("Purga completa ejecutada exitosamente.");
-                    */
                     
                     // 4. SEED LOCATIONS (MOVE TO START FOR BETTER VISIBILITY)
                     await SeedLocationsAsync(session);
 
                     // 5. Invocar sincronización (usando los métodos reales SyncAllAsync)
                     _logger.LogInformation("Inicio de sincronización automática de productos...");
-                    int products = await productService.SyncAllAsync(odooClient);
-                    _logger.LogInformation($"Productos sincronizados: {products}");
+                    try 
+                    {
+                        int products = await productService.SyncAllAsync(odooClient);
+                        _logger.LogInformation($"Productos sincronizados: {products}");
+                    }
+                    catch (Exception exProd)
+                    {
+                        _logger.LogError(exProd, "Error en sincronización de productos (saltando a órdenes).");
+                    }
 
                     _logger.LogInformation("Inicio de sincronización automática de órdenes...");
                     int orders = await inboundService.SyncAllAsync(odooClient);
@@ -207,7 +198,6 @@ namespace Victoria.Infrastructure.Services
             var locations = new[]
             {
                 new { Code = "DOCK-LPN", Profile = LocationProfile.Reserve, IsPickable = false },
-                new { Code = "DOCK-UNITS", Profile = LocationProfile.Picking, IsPickable = false },
                 new { Code = "STAGE-RESERVE", Profile = LocationProfile.Reserve, IsPickable = true },
                 new { Code = "STAGE-PICKING", Profile = LocationProfile.Picking, IsPickable = true },
                 new { Code = "PHOTO-STATION", Profile = LocationProfile.Picking, IsPickable = false }

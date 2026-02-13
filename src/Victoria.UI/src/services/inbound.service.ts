@@ -11,6 +11,12 @@ export interface ReceiveParams {
     lpnCount?: number;
     unitsPerLpn?: number;
     isPhotoSample?: boolean;
+    weight?: number;
+    length?: number;
+    width?: number;
+    height?: number;
+    packagingAction?: string;
+    selectedPackagingId?: number;
 }
 
 export const inboundService = {
@@ -41,6 +47,14 @@ export const inboundService = {
 
     patchOrder: async (orderId: string, params: { isCrossdock?: boolean; targetOutboundOrder?: string }) => {
         const { data } = await api.patch(`/inbound/orders/${orderId}`, params);
+        return data;
+    },
+
+    voidLpn: async (lpnId: string) => {
+        const { data } = await api.post(`/inbound/lpn/${lpnId}/void`, {
+            reason: "Undo scan",
+            stationId: "STATION-01"
+        });
         return data;
     }
 };

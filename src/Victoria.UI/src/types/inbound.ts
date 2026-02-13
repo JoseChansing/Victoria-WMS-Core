@@ -36,5 +36,6 @@ export interface PurchaseOrder {
 export interface InboundKPIs {
     pendingOrders: number;
     unitsToReceive: number;
+    processedToday: number;
     highPriorityCount: number;
 }

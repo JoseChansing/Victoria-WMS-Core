@@ -1,3 +1,92 @@
 [02/11/2026 4:25:02 p. m.] Receiving 30002005-A1. IsPhotoSample: True, Station: PHOTO-STATION
 [02/11/2026 4:27:54 p. m.] Receiving 30002005-A1. IsPhotoSample: True, Station: PHOTO-STATION
 [02/11/2026 10:57:09 p. m.] Receiving 1308010-BU01. IsPhotoSample: True, Station: PHOTO-STATION
+[02/12/2026 8:44:09 a. m.] Receiving 1308010-BU01. IsPhotoSample: False, Station: STATION-01
+[02/12/2026 8:45:49 a. m.] Receiving 1308010-BU01. IsPhotoSample: True, Station: PHOTO-STATION
+[02/12/2026 8:45:55 a. m.] Receiving 1308010-BU01. IsPhotoSample: True, Station: PHOTO-STATION
+[02/12/2026 8:45:59 a. m.] Receiving 1308010-BU01. IsPhotoSample: True, Station: PHOTO-STATION
+[02/12/2026 8:55:37 a. m.] Receiving 1308010-BU01. IsPhotoSample: True, Station: PHOTO-STATION
+[02/12/2026 9:00:56 a. m.] Receiving 1308010-BU01. IsPhotoSample: True, Station: PHOTO-STATION
+[02/12/2026 9:01:47 a. m.] Receiving 1308010-BU01. IsPhotoSample: True, Station: PHOTO-STATION
+[02/12/2026 9:05:48 a. m.] Receiving 1308010-BU01. IsPhotoSample: True, Station: PHOTO-STATION
+[02/12/2026 9:05:54 a. m.] Receiving 1308010-BU01. IsPhotoSample: True, Station: PHOTO-STATION
+[02/12/2026 9:06:53 a. m.] Receiving 1308010-BU01. IsPhotoSample: True, Station: PHOTO-STATION
+[02/12/2026 9:06:54 a. m.] Receiving 1308010-BU01. IsPhotoSample: True, Station: PHOTO-STATION
+[02/12/2026 9:06:54 a. m.] Receiving 1308010-BU01. IsPhotoSample: True, Station: PHOTO-STATION
+[02/12/2026 9:06:55 a. m.] Receiving 1308010-BU01. IsPhotoSample: True, Station: PHOTO-STATION
+[02/12/2026 9:06:55 a. m.] Receiving 1308010-BU01. IsPhotoSample: True, Station: PHOTO-STATION
+[02/12/2026 9:06:55 a. m.] Receiving 1308010-BU01. IsPhotoSample: True, Station: PHOTO-STATION
+[02/12/2026 9:06:55 a. m.] Receiving 1308010-BU01. IsPhotoSample: True, Station: PHOTO-STATION
+[02/12/2026 9:06:57 a. m.] Receiving 1308010-BU01. IsPhotoSample: True, Station: PHOTO-STATION
+[02/12/2026 9:10:32 a. m.] Receiving 1308010-BU01. IsPhotoSample: True, Station: PHOTO-STATION
+[ERROR] 02/12/2026 9:10:32 a. m. Receive failed: Marten cannot support custom value types in Linq expression. Please query on either simple properties of the value type, or register a custom IMemberSource for this value type.
+   at Marten.Linq.Members.ChildDocument.CreateComparison(String op, ConstantExpression constant)
+   at Marten.Linq.Parsing.SimpleExpression.CompareTo(SimpleExpression right, String op)
+   at Marten.Linq.Parsing.WhereClauseParser.VisitBinary(BinaryExpression node)
+   at Marten.Linq.Parsing.WhereClauseParser.Visit(Expression node)
+   at Marten.Linq.Parsing.WhereClauseParser.buildCompoundWhereFragment(BinaryExpression node, String separator)
+   at Marten.Linq.Parsing.WhereClauseParser.VisitBinary(BinaryExpression node)
+   at Marten.Linq.Parsing.WhereClauseParser.Visit(Expression node)
+   at Marten.Linq.Parsing.WhereClauseParser.buildCompoundWhereFragment(BinaryExpression node, String separator)
+   at Marten.Linq.Parsing.WhereClauseParser.VisitBinary(BinaryExpression node)
+   at Marten.Linq.Parsing.WhereClauseParser.Visit(Expression node)
+   at Marten.Linq.SqlGeneration.Statement.ParseWhereClause(IReadOnlyList`1 wheres, IMartenSession session, IQueryableMemberCollection collection, IDocumentStorage storage)
+   at Marten.Linq.CollectionUsage.BuildTopStatement(IMartenSession session, IQueryableMemberCollection collection, IDocumentStorage storage, QueryStatistics statistics)
+   at Marten.Linq.Parsing.LinqQueryParser.BuildStatements()
+   at Marten.Linq.Parsing.LinqQueryParser.BuildHandler[TResult]()
+   at Marten.Linq.MartenLinqQueryProvider.ExecuteAsync[TResult](Expression expression, CancellationToken token, SingleValueMode valueMode)
+   at JasperFx.Core.Exceptions.ExceptionTransformExtensions.TransformAndThrow(IEnumerable`1 transforms, Exception ex)
+   at JasperFx.Core.Exceptions.ExceptionTransforms.TransformAndThrow(Exception ex)
+   at Marten.Exceptions.MartenExceptionTransformer.WrapAndThrow(Exception exception)
+   at Marten.Linq.MartenLinqQueryProvider.ExecuteAsync[TResult](Expression expression, CancellationToken token, SingleValueMode valueMode)
+   at Victoria.Inventory.Application.Commands.ReceiveLpnHandler.Handle(ReceiveLpnCommand command) in C:\Users\jortega\Desktop\Victoria-WMS-Core\src\Victoria.Inventory\Application\Commands\ReceiveLpnHandler.cs:line 102
+   at Victoria.API.Controllers.InboundController.Receive(ReceiveRequest request) in C:\Users\jortega\Desktop\Victoria-WMS-Core\src\Victoria.API\Controllers\InboundController.cs:line 210
+[02/12/2026 9:14:17 a. m.] Routing SKU 1308010-BU01. IsPhotoSample: True, isStationSample: True, Target: PHOTO-STATION
+[02/12/2026 9:57:36 a. m.] Routing SKU 1308010-BU01. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 9:57:54 a. m.] Routing SKU 1308010-BU01. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 10:03:01 a. m.] Routing SKU 1308010-BU01. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 10:06:03 a. m.] Routing SKU 1308010-BU01. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 10:10:05 a. m.] Routing SKU 1308010-BU01. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 10:14:00 a. m.] Routing SKU 1308010-BU01. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 10:24:07 a. m.] Routing SKU 1308010-BU01. IsPhotoSample: True, isStationSample: True, Target: PHOTO-STATION
+[02/12/2026 10:24:22 a. m.] Routing SKU 1308010-BU01. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 10:39:00 a. m.] Routing SKU 1308010-BU01. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 10:39:01 a. m.] Routing SKU 1308010-BU01. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 10:59:41 a. m.] Routing SKU 13331988. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 10:59:41 a. m.] Routing SKU 13331988. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 10:59:41 a. m.] Routing SKU 13331988. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 10:59:41 a. m.] Routing SKU 13331988. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 10:59:41 a. m.] Routing SKU 13331988. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 10:59:41 a. m.] Routing SKU 13331988. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 10:59:41 a. m.] Routing SKU 13331988. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 10:59:41 a. m.] Routing SKU 13331988. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 10:59:41 a. m.] Routing SKU 13331988. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 10:59:41 a. m.] Routing SKU 13331988. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 11:09:49 a. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 11:09:50 a. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 11:09:50 a. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 11:18:16 a. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 11:18:16 a. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 11:42:05 a. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 11:42:05 a. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 12:55:52 p. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 12:55:52 p. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 1:32:34 p. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 2:12:34 p. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 2:41:34 p. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 2:43:01 p. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 3:43:43 p. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 3:47:22 p. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 3:47:22 p. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: RECEIVING_STAGE
+[02/12/2026 9:09:47 p. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: DOCK-LPN
+[02/12/2026 9:09:47 p. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: DOCK-LPN
+[02/12/2026 9:13:34 p. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: DOCK-LPN
+[02/12/2026 9:53:17 p. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: DOCK-LPN
+[02/12/2026 9:53:17 p. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: DOCK-LPN
+[02/12/2026 9:53:17 p. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: DOCK-LPN
+[02/12/2026 9:55:14 p. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: DOCK-LPN
+[02/12/2026 10:47:10 p. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: DOCK-LPN
+[02/12/2026 10:48:01 p. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: DOCK-LPN
+[02/12/2026 10:49:04 p. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: DOCK-LPN
+[02/12/2026 10:52:41 p. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: DOCK-LPN
+[02/12/2026 10:54:22 p. m.] Routing SKU 21481-JE30A. IsPhotoSample: False, isStationSample: False, Target: DOCK-LPN

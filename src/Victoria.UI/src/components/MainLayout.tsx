@@ -8,11 +8,11 @@ import {
     LogOut,
     UserCircle,
     ChevronRight,
-    Bell,
     MapPin,
     Box
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import NotificationBell from './Layout/NotificationBell';
 
 interface SidebarItemProps {
     icon: React.ReactNode;
@@ -116,10 +116,7 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                     </div>
 
                     <div className="flex items-center space-x-4">
-                        <button className="p-2 text-slate-400 hover:text-white transition-colors relative">
-                            <Bell className="w-5 h-5" />
-                            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-rose-500 border-2 border-corp-nav rounded-full"></span>
-                        </button>
+                        <NotificationBell />
                         <div className="h-8 w-[1px] bg-corp-secondary mx-2"></div>
                         <div className="flex items-center space-x-3">
                             <span className="text-xs font-bold text-slate-300">{user.role}</span>

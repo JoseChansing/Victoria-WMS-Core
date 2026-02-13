@@ -96,22 +96,28 @@ namespace Victoria.Inventory.Application.Commands
                 // Final Check: If SKU is still empty/null, use "UNKNOWN" to avoid crashing Create
                 if (string.IsNullOrEmpty(skuValue)) skuValue = "UNKNOWN";
 
-                // FOOL-PROOF VALIDATION: Prevent double samples in PHOTO-STATION
-                if (command.IsPhotoSample)
+                // FOOL-PROOF VALIDATION: Check for existing sample in PHOTO-STATION
+                // NORMALIZE SKU for query safety
+                var normalizedSku = skuValue?.Trim().ToUpperInvariant() ?? "UNKNOWN";
+                
+                var existingSample = await _session.Query<Lpn>()
+                    .AnyAsync(x => x.SelectedOrderId == command.OrderId && 
+                                   x.Sku.Value == normalizedSku && 
+                                   (x.CurrentLocationId == "PHOTO-STATION" || x.CurrentLocationId == "PHOTO"));
+                
+                // FORCE: Double check without OrderId just in case (as it might have been received for a different order accidentally)
+                if (!existingSample) 
                 {
-                    var existingSample = await _session.Query<Lpn>()
-                        .AnyAsync(x => x.SelectedOrderId == command.OrderId && 
-                                       x.Sku == Sku.Create(skuValue) && 
-                                       x.CurrentLocationId == "PHOTO-STATION");
-                    
-                    if (existingSample)
-                    {
-                        throw new InvalidOperationException("⛔ BLOQUEO: Ya existe 1 unidad en PHOTO-STATION para este ítem.");
-                    }
+                    existingSample = await _session.Query<Lpn>()
+                        .AnyAsync(x => x.Sku.Value == normalizedSku && 
+                                       (x.CurrentLocationId == "PHOTO-STATION" || x.CurrentLocationId == "PHOTO"));
                 }
 
                 // Load product ONCE for all uses (attributes, validation, brand/barcode)
                 var product = await _session.LoadAsync<Product>(skuValue);
+
+                // PASO 3: LOGGING AGRESIVO (Console)
+                Console.WriteLine($"[DEBUG] SKU: {normalizedSku}, HasImage: {product?.HasImage}, ExistingSampleFound: {existingSample}");
 
                 // 2. Physical Attributes Inheritance
                 var physicalAttrs = command.ManualDimensions;
@@ -136,7 +142,7 @@ namespace Victoria.Inventory.Application.Commands
                     var order = await _session.LoadAsync<InboundOrder>(command.OrderId);
 
                     // PRIORITY 1: PHOTO-FLOW
-                    var initialLocation = "RECEIVING_STAGE";
+                    var initialLocation = "DOCK-LPN";
                     string? moveReason = null;
 
                     if (isStationSample)
@@ -153,7 +159,7 @@ namespace Victoria.Inventory.Application.Commands
 
                     // Log for debugging
                     try {
-                        string logPath = @"C:\Users\orteg\OneDrive\Escritorio\Victoria WMS Core\reception_debug.log";
+                        string logPath = Path.Combine(Directory.GetCurrentDirectory(), "reception_debug.log");
                         string logLine = $"[{DateTime.Now}] Routing SKU {skuValue}. IsPhotoSample: {command.IsPhotoSample}, isStationSample: {isStationSample}, Target: {initialLocation}\n";
                         System.IO.File.AppendAllText(logPath, logLine);
                     } catch {}
@@ -164,15 +170,19 @@ namespace Victoria.Inventory.Application.Commands
                     
                     if (!photoStationOverride)
                     {
-                        if (product != null && !product.HasImage)
+                        if (product != null && !product.HasImage && !existingSample)
                         {
-                            Console.WriteLine($"[BACKEND-ROUTING] BLOCKING {skuValue} - Reason: No Image and PhotoFlow NOT active (Command.IsPhotoSample: {command.IsPhotoSample}, isStationSample: {isStationSample})");
-                            throw new InvalidOperationException($"[GOLDEN-SAMPLE] El producto {skuValue} requiere foto. Use el flujo de PHOTO-STATION.");
+                            Console.WriteLine($"[BACKEND-ROUTING] BLOCKING {skuValue} - Reason: No Image and No Sample in Photo-Station (Command.IsPhotoSample: {command.IsPhotoSample})");
+                            throw new InvalidOperationException($"[GOLDEN-SAMPLE] El producto {skuValue} requiere foto. Debe enviar 1 unidad a PHOTO-STATION primero.");
+                        }
+                        else if (existingSample)
+                        {
+                            Console.WriteLine($"[BACKEND-ROUTING] ALLOWING {skuValue} - Reason: Sample already at Photo-Station.");
                         }
                     }
                     else
                     {
-                         Console.WriteLine($"[BACKEND-ROUTING] ALLOWING {skuValue} - Reason: PhotoFlow ACTIVE (Command.IsPhotoSample: {command.IsPhotoSample}, initialLocation: {initialLocation})");
+                         Console.WriteLine($"[BACKEND-ROUTING] ALLOWING {skuValue} - Reason: PhotoFlow ACTIVE (initialLocation: {initialLocation})");
                     }
 
                     var lpn = Lpn.Provision(

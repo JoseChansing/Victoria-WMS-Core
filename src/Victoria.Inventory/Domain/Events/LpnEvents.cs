@@ -121,6 +121,14 @@ namespace Victoria.Inventory.Domain.Events
         string CreatedBy,
         string StationId
     ) : IDomainEvent;
+
+    public record LpnVoided(
+        string LpnId,
+        string Reason,
+        DateTime OccurredOn,
+        string CreatedBy,
+        string StationId
+    ) : IDomainEvent;
     public record ReceiptClosedWithShortage(
         string OrderId,
         string Sku,

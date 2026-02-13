@@ -28,13 +28,14 @@ interface LocationInventoryView {
 
 interface FlattenedInventory {
     locationId: string;
-    locationType: string;
+    locationType?: string;
     lpnId: string;
     sku: string;
     description: string;
     quantity: number;
     allocatedQuantity: number;
     status: number;
+    lpnType?: string;
 }
 
 export const InventoryByLocation = () => {
@@ -46,20 +47,8 @@ export const InventoryByLocation = () => {
         setLoading(true);
         try {
             const { data } = await api.get('/inventory/by-location');
-            // Data structure: { locationId, totalQty, lpnCount, items: [ { sku, quantity } ] }
-            const flattened: FlattenedInventory[] = data.flatMap((loc: any) =>
-                loc.items.map((item: any) => ({
-                    locationId: loc.locationId,
-                    locationType: 'Almacenamiento',
-                    lpnId: item.quantity === loc.totalQty && loc.lpnCount === 1 ? 'PALLET' : 'LOOSE',
-                    sku: item.sku,
-                    description: item.description || '',
-                    quantity: item.quantity,
-                    allocatedQuantity: 0,
-                    status: 2
-                }))
-            );
-            setLocations(flattened as any); // Adapt manually to avoid major refactor
+            // Backend now returns flat list of LPNs
+            setLocations(data);
         } catch (error) {
             console.error('Error fetching inventory by location:', error);
         } finally {
@@ -82,10 +71,20 @@ export const InventoryByLocation = () => {
 
     const getStatusInfo = (status: number) => {
         switch (status) {
-            case 1: return { label: 'Recibido', color: 'bg-blue-500/10 text-blue-500 border-blue-500/20' };
-            case 2: return { label: 'Ubicado', color: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' };
-            case 3: return { label: 'En Picking', color: 'bg-amber-500/10 text-amber-500 border-amber-500/20' };
-            default: return { label: 'Desconocido', color: 'bg-slate-500/10 text-slate-500 border-slate-500/20' };
+            case 297: // Received
+            case 1:
+                return { label: 'Recibido', color: 'bg-blue-500/10 text-blue-500 border-blue-500/20' };
+            case 298: // Putaway
+            case 306: // Active
+            case 2:
+                return { label: 'Ubicado', color: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' };
+            case 299: // Allocated
+            case 300: // Picked
+            case 3:
+                return { label: 'En Picking', color: 'bg-amber-500/10 text-amber-500 border-amber-500/20' };
+            case 303: // Quarantine
+                return { label: 'Cuarentena', color: 'bg-rose-500/10 text-rose-500 border-rose-500/20' };
+            default: return { label: `Status ${status}`, color: 'bg-slate-500/10 text-slate-500 border-slate-500/20' };
         }
     };
 
@@ -209,7 +208,7 @@ export const InventoryByLocation = () => {
                                             <div className="flex flex-col">
                                                 <span className="font-bold text-emerald-400 text-sm">{item.locationId}</span>
                                                 <span className="text-[10px] text-slate-500 font-black uppercase tracking-tighter">
-                                                    {item.locationType}
+                                                    {item.locationId.startsWith('STAG') ? 'Almacenamiento' : 'Picking'}
                                                 </span>
                                             </div>
                                         </td>

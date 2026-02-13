@@ -51,16 +51,8 @@ namespace Victoria.Infrastructure.Integration.Odoo
 </methodCall>";
 
             var response = await SendAsync("common", xml);
+            _logger.LogInformation("[ODOO-AUTH-RAW] Response: {Xml}", response);
             _uid = ParseIntResponse(response);
-            
-            if (_uid <= 0)
-            {
-                _logger.LogWarning("[ODOO] Authentication failed for user {User} in DB {Db}. Odoo returned boolean false.", _user, _db);
-            }
-            else
-            {
-                _logger.LogInformation("[ODOO] Authentication successful. UID: {Uid}", _uid);
-            }
 
             return _uid;
         }
@@ -97,25 +89,14 @@ namespace Victoria.Infrastructure.Integration.Odoo
             if (response is System.Collections.IEnumerable list)
             {
                 var results = new List<T>();
-                var json = System.Text.Json.JsonSerializer.Serialize(response);
-                var options = new System.Text.Json.JsonSerializerOptions 
-                { 
-                    PropertyNameCaseInsensitive = true,
-                    NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString
-                };
+                if (list == null) return results;
+
+                _logger.LogInformation("[ODOO-RPC] Mapping {Model}...", model);
                 
-                try 
+                foreach (var item in list)
                 {
-                    return System.Text.Json.JsonSerializer.Deserialize<List<T>>(json, options) ?? new List<T>();
-                }
-                catch (System.Text.Json.JsonException ex)
-                {
-                    _logger.LogWarning("[ODOO-RPC] JSON Deserialization failed: {Msg}. Falling back to manual mapping.", ex.Message);
-                    // Fallback to manual mapping if JSON fails
-                    foreach (var item in list)
+                    if (item is Dictionary<string, object> dict)
                     {
-                        if (item is Dictionary<string, object?> dict)
-                        {
                             var obj = new T();
                             var props = typeof(T).GetProperties();
                             foreach (var prop in props)
@@ -133,16 +114,24 @@ namespace Victoria.Infrastructure.Integration.Odoo
                                 {
                                     if (val == null || (val is bool b && !b && prop.PropertyType != typeof(bool)))
                                     {
-                                        // Skip or set to null/default
                                         continue;
+                                    }
+
+                                    // PATCH: Handle Many2one (List [id, name]) by taking the first element
+                                    // ONLY if target property is numeric (expecting an ID)
+                                    bool isNumeric = prop.PropertyType == typeof(int) || prop.PropertyType == typeof(long) || prop.PropertyType == typeof(double) || prop.PropertyType == typeof(float) || prop.PropertyType == typeof(decimal);
+                                    if (isNumeric && val is System.Collections.IList listVal && listVal.Count > 0 && !(val is string))
+                                    {
+                                        val = listVal[0];
                                     }
 
                                     try 
                                     {
-                                        if (prop.PropertyType == typeof(int) || prop.PropertyType == typeof(Int32))
-                                            prop.SetValue(obj, Convert.ToInt32(val));
-                                        else if (prop.PropertyType == typeof(double))
-                                            prop.SetValue(obj, Convert.ToDouble(val, System.Globalization.CultureInfo.InvariantCulture));
+                                        if (prop.PropertyType == typeof(int) || prop.PropertyType == typeof(long) || prop.PropertyType == typeof(double) || prop.PropertyType == typeof(float) || prop.PropertyType == typeof(decimal))
+                                        {
+                                            var changedVal = Convert.ChangeType(val, prop.PropertyType, System.Globalization.CultureInfo.InvariantCulture);
+                                            prop.SetValue(obj, changedVal);
+                                        }
                                         else if (prop.PropertyType == typeof(string))
                                             prop.SetValue(obj, val?.ToString());
                                         else if (prop.PropertyType == typeof(bool))
@@ -150,14 +139,16 @@ namespace Victoria.Infrastructure.Integration.Odoo
                                         else
                                             prop.SetValue(obj, val);
                                     }
-                                    catch { /* skip error */ }
+                                    catch (Exception mapEx)
+                                    { 
+                                        _logger.LogWarning("[ODOO-RPC] Mapping Failed for {Key}: {Msg}", foundKey, mapEx.Message);
+                                    }
                                 }
                             }
                             results.Add(obj);
                         }
-                    }
-                    return results;
                 }
+                return results;
             }
 
             return new List<T>();
@@ -314,7 +305,18 @@ namespace Victoria.Infrastructure.Integration.Odoo
             doc.LoadXml(response);
 
             var fault = doc.SelectSingleNode("//fault");
-            if (fault != null) return null;
+            if (fault != null) 
+            {
+                 var faultString = fault.OuterXml;
+                 if (faultString.Contains("cannot marshal None"))
+                 {
+                     _logger.LogWarning("[ODOO-RPC] Suppressing 'cannot marshal None' fault. Assuming void success.");
+                     return null;
+                 }
+
+                 _logger.LogError("[ODOO-RPC] Fault detected in ExecuteAction: {Fault}", faultString);
+                 throw new Exception($"Odoo RPC Fault: {faultString}");
+            }
 
             var valueNode = doc.SelectSingleNode("//value/*");
             var result = ParseValueNode(valueNode);

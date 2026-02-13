@@ -36,9 +36,10 @@ export const PackagingModal: React.FC<PackagingModalProps> = ({ sku, packagings,
             }
             onRefresh();
             setEditingPkg(null);
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error saving packaging:', error);
-            alert('Error al guardar el empaque.');
+            const serverError = error.response?.data?.error;
+            alert(serverError ? `Error: ${serverError}` : 'Error al guardar el empaque.');
         } finally {
             setIsSaving(false);
         }

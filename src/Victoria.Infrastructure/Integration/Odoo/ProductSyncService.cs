@@ -57,7 +57,7 @@ namespace Victoria.Infrastructure.Integration.Odoo
                 "id", "display_name", "default_code", "weight", "barcode", "description",
                 "image_128", "image_1920", "type", "active", "write_date", "categ_id",
                 "brand_id", "product_template_attribute_value_ids", "product_template_variant_value_ids",
-                "bulk_ids"
+                "bulk_ids", "product_tmpl_id"
             };
 
             int batchSize = 50;
@@ -363,6 +363,19 @@ namespace Victoria.Infrastructure.Integration.Odoo
             product.ImageSource = imageSource;
             product.HasImage = isValidImage(odooProduct.Image_128) || isValidImage(odooProduct.Image_1920);
             product.OdooId = odooProduct.Id;
+
+            // Map OdooTemplateId
+            try {
+                if (odooProduct.Product_Tmpl_Id is System.Collections.IEnumerable en && !(odooProduct.Product_Tmpl_Id is string)) {
+                    var l = new List<object>(); foreach (var i in en) l.Add(i);
+                    if (l.Count > 0) product.OdooTemplateId = int.TryParse(l[0].ToString(), out var tid) ? tid : 0;
+                } else if (odooProduct.Product_Tmpl_Id is JsonElement jtmpl && jtmpl.ValueKind == JsonValueKind.Array && jtmpl.GetArrayLength() > 0) {
+                    product.OdooTemplateId = jtmpl[0].GetInt32();
+                } else if (odooProduct.Product_Tmpl_Id is int itid) {
+                    product.OdooTemplateId = itid;
+                }
+            } catch { }
+
             product.IsArchived = !odooProduct.Active;
             
             // Mapeo Packagings (Union of packaging_ids and bulk_ids)
@@ -402,7 +415,8 @@ namespace Victoria.Infrastructure.Integration.Odoo
             var fields = new string[] { 
                 "id", "display_name", "default_code", "active", "write_date", "categ_id",
                 "brand_id", "weight", "barcode", "description", "image_128", "image_1920",
-                "bulk_ids", "product_template_attribute_value_ids", "product_template_variant_value_ids"
+                "bulk_ids", "product_template_attribute_value_ids", "product_template_variant_value_ids",
+                "product_tmpl_id"
             };
 
             // 1. Fetch Product

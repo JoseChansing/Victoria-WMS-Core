@@ -38,6 +38,14 @@ export const useInbound = () => {
         }
     });
 
+    const voidLpnMutation = useMutation({
+        mutationFn: (lpnId: string) => inboundService.voidLpn(lpnId),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['inbound-kpis'] });
+            queryClient.invalidateQueries({ queryKey: ['inbound-orders'] });
+        }
+    });
+
     return {
         kpis: kpisQuery.data,
         orders: (ordersQuery.data || []) as any[],
@@ -49,6 +57,8 @@ export const useInbound = () => {
         isClosing: closeOrderMutation.isPending,
         patchOrder: patchOrderMutation.mutateAsync,
         isPatching: patchOrderMutation.isPending,
+        voidLpn: voidLpnMutation.mutateAsync,
+        isVoiding: voidLpnMutation.isPending,
         printRfid: (lpnId: string) => inboundService.printRfid(lpnId)
     };
 };

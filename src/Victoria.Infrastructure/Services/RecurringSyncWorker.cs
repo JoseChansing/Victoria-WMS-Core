@@ -21,6 +21,8 @@ namespace Victoria.Infrastructure.Services
             _logger = logger;
         }
 
+        private int _guardianCycleCounter = 0;
+
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             _logger.LogInformation($"[WORKER] Recurring Product Sync Worker started. Interval: {_interval.TotalMinutes} min.");
@@ -45,6 +47,16 @@ namespace Victoria.Infrastructure.Services
                         
                         _logger.LogInformation("[WORKER] Syncing Inbound Orders...");
                         int orderCount = await inboundService.SyncAllAsync(odooClient);
+
+                        // --- GUARDIAN LOGIC ---
+                        _guardianCycleCounter++;
+                        if (_guardianCycleCounter >= 3)
+                        {
+                            _logger.LogInformation("[WORKER] Executing Sync Guardian (Consistency Check)...");
+                            int guardianActions = await inboundService.PerformCleanupGuardian(odooClient);
+                            _logger.LogInformation($"[WORKER] Guardian finished. Actions: {guardianActions}");
+                            _guardianCycleCounter = 0;
+                        }
 
                         _logger.LogInformation($"[WORKER] Incremental sync finished. Products: {prodCount}, Orders: {orderCount}.");
                     }

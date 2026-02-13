@@ -33,7 +33,7 @@ namespace Victoria.Inventory.Domain.ValueObjects
                 Level = match.Groups[4].Value;
                 Position = match.Groups[5].Value;
             }
-            else if (value is "DOCK-LPN" or "DOCK-UNITS" or "STAGE-RESERVE" or "STAGE-PICKING" or "PHOTO-STATION")
+            else if (value is "DOCK-LPN" or "STAGE-RESERVE" or "STAGE-PICKING" or "PHOTO-STATION") 
             {
                 Value = value;
                 Zone = value.Split('-')[0]; // DOCK o STAGE

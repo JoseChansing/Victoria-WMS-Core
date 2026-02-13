@@ -20,6 +20,7 @@ namespace Victoria.Inventory.Domain.Aggregates
         public string ImageSource { get; set; } = "null"; // variant, thumbnail, null
         public string Thumbnail { get; set; } = string.Empty; // Base64
         public int OdooId { get; set; }
+        public int OdooTemplateId { get; set; }
         public bool HasImage { get; set; }
         public bool IsArchived { get; set; }
         public List<ProductPackaging> Packagings { get; set; } = new();

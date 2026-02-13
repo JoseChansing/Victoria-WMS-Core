@@ -63,7 +63,7 @@ export const SkuMaster: React.FC = () => {
     const [categoryFilter, setCategoryFilter] = useState('');
     const [selectedHasImage, setSelectedHasImage] = useState('');
     const [includeArchived, setIncludeArchived] = useState(false);
-    const [selectedProductPackaging, setSelectedProductPackaging] = useState<{ sku: string, packagings: any[] } | null>(null);
+    const [selectedSku, setSelectedSku] = useState<string | null>(null);
 
     // Debounce Search Effect (Search + Filters)
     React.useEffect(() => {
@@ -108,6 +108,8 @@ export const SkuMaster: React.FC = () => {
 
     const products = data?.items || [];
     const totalItems = data?.totalItems || 0;
+
+    const selectedProduct = products.find(p => p.sku === selectedSku);
 
     const deleteMutation = useMutation({
         mutationFn: async (sku: string) => {
@@ -447,7 +449,7 @@ export const SkuMaster: React.FC = () => {
                                         </td>
                                         <td className="px-6 py-4 text-center">
                                             <button
-                                                onClick={() => setSelectedProductPackaging({ sku: product.sku, packagings: product.packagings })}
+                                                onClick={() => setSelectedSku(product.sku)}
                                                 className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all duration-300 ${product.hasPackaging ? 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30' : 'bg-slate-900 text-slate-600 border-slate-800 opacity-40 hover:opacity-100'}`}
                                             >
                                                 <Package className="w-3 h-3" />
@@ -488,16 +490,14 @@ export const SkuMaster: React.FC = () => {
                 </div>
             </div>
 
-            {selectedProductPackaging && (
+            {selectedSku && selectedProduct && (
                 <PackagingModal
-                    sku={selectedProductPackaging.sku}
-                    packagings={selectedProductPackaging.packagings}
-                    isOpen={!!selectedProductPackaging}
-                    onClose={() => setSelectedProductPackaging(null)}
+                    sku={selectedSku}
+                    packagings={selectedProduct.packagings}
+                    isOpen={!!selectedSku}
+                    onClose={() => setSelectedSku(null)}
                     onRefresh={() => {
                         queryClient.invalidateQueries({ queryKey: ['products'] });
-                        // Re-fetch current selected product if needed or just wait for products invalidation
-                        // To keep it simple, we invalidate 'products' which will update everything.
                     }}
                 />
             )}

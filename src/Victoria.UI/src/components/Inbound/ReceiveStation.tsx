@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { ArrowLeft, Package, CheckCircle2, AlertCircle, ScanLine, Calculator, Printer, Radio, Camera, Zap } from 'lucide-react';
+import { ArrowLeft, Package, CheckCircle2, AlertCircle, ScanLine, Calculator, Printer, Radio, Camera, Zap, AlertTriangle, XCircle, Lock } from 'lucide-react';
 import { useInbound } from '../../hooks/useInbound';
 import { zebraService } from '../../services/zebra.service';
 import { PackagingUpdateModal } from './PackagingUpdateModal';
-import api from '../../api/axiosConfig';
+import ActivityFeed from './ActivityFeed';
+import LpnManagementModal from './LpnManagementModal';
+import CriticalStopModal from './CriticalStopModal';
 
 interface ReceiveStationProps {
     mode: 'rfid' | 'standard';
@@ -14,7 +16,7 @@ interface ReceiveStationProps {
 const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
     const { orderId, workingMode } = useParams<{ orderId: string, workingMode: 'standard' | 'crossdock' }>();
     const navigate = useNavigate();
-    const { orders, receiveLpn, isReceiving } = useInbound();
+    const { orders, receiveLpn, isReceiving, voidLpn } = useInbound();
 
     // State
     const [isPhotoSample, setIsPhotoSample] = useState(false);
@@ -37,11 +39,45 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
     const [selectedPkgId, setSelectedPkgId] = useState<number | 'manual'>('manual');
     const [showUpdateModal, setShowUpdateModal] = useState(false);
     const [pendingParams, setPendingParams] = useState<any>(null);
+    const [isOrphaned, setIsOrphaned] = useState(false);
+    const [orphanError, setOrphanError] = useState('');
 
     const inputRef = useRef<HTMLInputElement>(null);
 
     // Find Order
     const order = orders?.find(o => o.id === orderId || o.orderNumber === orderId);
+
+    // Void Logic State & Session Persistence
+    const [scannedHistory, setScannedHistory] = useState<any[]>(() => {
+        const saved = localStorage.getItem(`scans_${orderId}`);
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved);
+                return parsed.map((item: any) => ({ ...item, timestamp: new Date(item.timestamp) }));
+            } catch (e) { return []; }
+        }
+        return [];
+    });
+
+    useEffect(() => {
+        if (orderId) {
+            localStorage.setItem(`scans_${orderId}`, JSON.stringify(scannedHistory));
+        }
+    }, [scannedHistory, orderId]);
+
+    const [managingSku, setManagingSku] = useState<string | null>(null);
+
+    // Read Only & Orphan Detection
+    const isReadOnly = order?.status === 'Completed' || order?.status === 'Cancelled' || order?.status === 'Orphaned';
+
+    useEffect(() => {
+        if (order?.status === 'Orphaned') {
+            // NOTE: We no longer trigger the blocking modal immediately.
+            // We allow the user to view the orphaned order in Read-Only mode.
+            // setIsOrphaned(true); <--- REMOVED BLOCKING
+            setOrphanError("Orden cancelada externamente en Odoo. Debe ANULAR todos los bultos registrados para finalizar el proceso.");
+        }
+    }, [order?.status]);
 
     // Calc Peso Estimado
     // Calc Peso Estimado
@@ -103,10 +139,10 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
         }
     }, [isPhotoSample]);
 
-    const totalEstimatedWeight = Number(lpnCount) * Number(unitsPerLpn) * Number(manualWeight);
+    const totalEstimatedWeight = Number(lpnCount) * Number(manualWeight);
 
     const singleVolume = (Number(manualLength) * Number(manualWidth) * Number(manualHeight)) / 1000000;
-    const totalEstimatedVolume = Number(lpnCount) * Number(unitsPerLpn) * singleVolume;
+    const totalEstimatedVolume = Number(lpnCount) * singleVolume;
 
     // Auto-focus logic
     useEffect(() => {
@@ -116,16 +152,21 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
     }, [feedback, order, workingMode]);
 
     // Derived State
+    // Derived State
     const totalUnits = order?.totalUnits || 0;
     const receivedUnits = order?.lines.reduce((acc: number, l: any) => acc + l.receivedQty, 0) || 0;
     const progress = totalUnits > 0 ? (receivedUnits / totalUnits) * 100 : 0;
+
+    const handleScanValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setScanValue(e.target.value.toUpperCase());
+    };
 
     const handlePrintBatch = async (overrideIds?: string[]) => {
         const lpnIds = overrideIds || lastReceivedLpnIds;
 
         if (!lpnIds || lpnIds.length === 0) {
-            console.warn("⚠️ Intento de impresión sin IDs de LPN.");
-            setFeedback({ type: 'error', message: 'No hay LPNs recientes para imprimir.' });
+            console.warn("⚠️ Print attempt without LPN IDs.");
+            setFeedback({ type: 'error', message: 'No recent LPNs to print.' });
             return;
         }
 
@@ -139,14 +180,14 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
                 const targetPrinter = await zebraService.getDefaultPrinter();
 
                 if (!targetPrinter) {
-                    console.error("❌ No se encontró ninguna impresora Zebra.");
-                    alert("⚠️ No se detectó ninguna impresora Zebra. Verifique que Browser Print esté corriendo.");
+                    console.error("❌ No Zebra printer found.");
+                    alert("⚠️ No Zebra printer detected. Please check if Browser Print is running.");
                     return;
                 }
 
-                console.log("🖨️ Enviando a:", targetPrinter.uid);
+                console.log("🖨️ Sending to:", targetPrinter.uid);
                 await zebraService.printZpl(targetPrinter.uid, zpl);
-                setFeedback({ type: 'success', message: 'Comando RFID enviado a la impresora.' });
+                setFeedback({ type: 'success', message: 'RFID command sent to printer.' });
 
                 // STATE CLEANUP: Evitar impresiones fantasma
                 setLastReceivedLpnIds([]);
@@ -157,10 +198,10 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
                 setPrintUrl(url);
             }
         } catch (error: any) {
-            console.error("❌ Error en flujo de impresión:", error);
+            console.error("❌ Print flow error:", error);
             setFeedback({
                 type: 'error',
-                message: `Error al imprimir: ${error.message || 'Verifique la conexión.'}`
+                message: `Print error: ${error.message || 'Check connection.'}`
             });
         }
     };
@@ -172,7 +213,7 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
         // Validation: Verify if SKU belongs to order
         const line = order.lines.find((l: any) => l.sku === scanValue);
         if (!line) {
-            setFeedback({ type: 'error', message: `El SKU '${scanValue}' no pertenece a esta orden.` });
+            setFeedback({ type: 'error', message: `SKU '${scanValue}' does not belong to this order.` });
             setScanValue('');
             return;
         }
@@ -228,7 +269,11 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
                 setManualWidth(0);
                 setManualHeight(0);
                 setSelectedPkgId('manual');
-                if (inputRef.current) inputRef.current.focus();
+                setIsPhotoSample(false);
+                if (inputRef.current) {
+                    inputRef.current.value = '';
+                    inputRef.current.focus();
+                }
             };
 
             const response = await receiveLpn(params);
@@ -236,6 +281,21 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
             if (lpnIds && lpnIds.length > 0) {
                 console.log("✅ Recepción exitosa. IDs:", lpnIds);
                 setLastReceivedLpnIds(lpnIds);
+
+                // Add to history (last scanned LPN)
+                const newScan = {
+                    id: lpnIds[0],
+                    sku: params.rawScan,
+                    quantity: params.quantity,
+                    timestamp: new Date().toISOString(), // Use string for consistent persistence
+                    stationId: params.isPhotoSample ? "PHOTO-STATION" : "STATION-01",
+                };
+
+                setScannedHistory(prev => {
+                    // Prevent duplicates in history if rapid fire scans happen
+                    if (prev.some(s => s.id === newScan.id)) return prev;
+                    return [newScan, ...prev].slice(0, 10);
+                });
 
                 const shouldPrint = autoPrintOverride ?? false;
 
@@ -255,7 +315,7 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
                 }
             }
 
-            setFeedback({ type: 'success', message: `Recibido: ${params.lpnCount} LPN(s) de ${line.productName}` });
+            setFeedback({ type: 'success', message: `Received: ${params.lpnCount} LPN(s) of ${line?.productName || ''}` });
             resetForm();
         } catch (error: any) {
             const errorData = error.response?.data;
@@ -264,47 +324,35 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
             if (errorMsg.includes('[GOLDEN-SAMPLE]')) {
                 setSelectedSkuForPhoto(params.rawScan);
                 setShowPhotoWizard(true);
+            } else if (errorMsg === 'ORDER_ORPHANED' || (error.response?.data?.error === 'ORDER_ORPHANED')) {
+                setIsOrphaned(true);
+                setOrphanError(error.response?.data?.message || "Orden cancelada externamente.");
             } else {
-                setFeedback({ type: 'error', message: 'Reception failed. Please try again.' });
+                setFeedback({ type: 'error', message: `Error: ${errorMsg}` });
             }
         }
     };
 
-    const handlePackagingUpdateConfirm = async (action: 'receive_only' | 'update_odoo' | 'create_new') => {
-        if (!pendingParams) return;
-
+    const handleVoidLpn = async (lpnId: string) => {
         try {
-            if (action === 'update_odoo') {
-                await api.put(`products/${pendingParams.rawScan}/packaging/${selectedPkgId}`, {
-                    name: selectedLine.packagings.find((p: any) => p.odooId === selectedPkgId)?.name,
-                    qty: Number(unitsPerLpn),
-                    weight: Number(manualWeight),
-                    length: Number(manualLength),
-                    width: Number(manualWidth),
-                    height: Number(manualHeight)
-                });
-            } else if (action === 'create_new') {
-                await api.post(`products/${pendingParams.rawScan}/packaging`, {
-                    name: `EMP ${unitsPerLpn} UN`, // Auto-naming
-                    qty: Number(unitsPerLpn),
-                    weight: Number(manualWeight),
-                    length: Number(manualLength),
-                    width: Number(manualWidth),
-                    height: Number(manualHeight)
-                });
-            }
+            await voidLpn(lpnId);
 
-            // Proceed with reception
-            await executeReception(pendingParams, pendingParams.autoPrintOverride);
-        } catch (err) {
-            console.error("Error in Smart Save:", err);
-            alert("Error al procesar Smart Save. Se procederá solo con la recepción.");
-            await executeReception(pendingParams, pendingParams.autoPrintOverride);
-        } finally {
-            setShowUpdateModal(false);
-            setPendingParams(null);
+            setScannedHistory(prev => prev.filter(item => item.id !== lpnId));
+            if (lastReceivedLpnIds.includes(lpnId)) setLastReceivedLpnIds([]);
+
+            setFeedback({ type: 'success', message: `LPN ${lpnId} voided.` });
+        } catch (error: any) {
+            if (error.response?.data?.error === 'ORDER_ORPHANED') {
+                setIsOrphaned(true);
+                setOrphanError(error.response?.data?.message || "Orden cancelada externamente.");
+            } else {
+                setFeedback({ type: 'error', message: error.response?.data?.error || "Error voiding LPN" });
+            }
+            throw error;
         }
     };
+
+
 
     if (!order) {
         return (
@@ -328,10 +376,38 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
                     </button>
                     <div>
                         <div className="flex items-center space-x-3">
-                            <span className={`text-[10px] font-black ${rfidMode === 'rfid' ? 'bg-blue-600' : 'bg-emerald-600'} text-white px-3 py-1 rounded-full uppercase tracking-widest shadow-lg shadow-black/40`}>
-                                {rfidMode === 'rfid' ? 'RFID' : 'STANDARD'} {workingMode?.toUpperCase()}
+                            <span className={`text-[10px] font-black ${isReadOnly ? 'bg-amber-600' : (rfidMode === 'rfid' ? 'bg-blue-600' : 'bg-emerald-600')} text-white px-3 py-1 rounded-full uppercase tracking-widest shadow-lg shadow-black/40`}>
+                                {isReadOnly ? 'READ ONLY' : (rfidMode === 'rfid' ? 'RFID' : 'STANDARD')} {workingMode?.toUpperCase()}
                             </span>
                             <h1 className="text-2xl font-black tracking-tighter uppercase whitespace-nowrap">{order.orderNumber}</h1>
+                            {isReadOnly && (
+                                <div className={`ml-4 flex items-center gap-2 px-4 py-1.5 border rounded-full animate-pulse shadow-[0_0_15px_rgba(0,0,0,0.1)] ${order.status === 'Cancelled' ? 'bg-rose-500/10 border-rose-500/30 shadow-rose-500/10' :
+                                    order.status === 'Orphaned' ? 'bg-amber-500/10 border-amber-500/30 shadow-amber-500/10' :
+                                        'bg-amber-500/10 border-amber-500/30 shadow-amber-500/10' // Default/Completed
+                                    }`}>
+                                    <span className={`text-[10px] font-black uppercase tracking-[0.2em] whitespace-nowrap flex items-center gap-2 ${order.status === 'Cancelled' ? 'text-rose-500' :
+                                        order.status === 'Orphaned' ? 'text-amber-500' :
+                                            'text-amber-500'
+                                        }`}>
+                                        {order.status === 'Cancelled' ? (
+                                            <>
+                                                <XCircle className="w-3 h-3" />
+                                                ⛔ ORDEN CANCELADA
+                                            </>
+                                        ) : order.status === 'Orphaned' ? (
+                                            <>
+                                                <AlertTriangle className="w-3 h-3" />
+                                                ⚠️ ORDEN HUÉRFANA
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Zap className="w-3 h-3 fill-amber-500" />
+                                                🔒 ORDEN FINALIZADA
+                                            </>
+                                        )}
+                                    </span>
+                                </div>
+                            )}
                         </div>
                         <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mt-1">SUPPLIER: <span className="text-slate-300">{order.supplier}</span></p>
                     </div>
@@ -348,14 +424,33 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
                         </div>
                     </div>
                 </div>
-            </header>
+            </header >
 
             <main className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-corp-accent/5 via-transparent to-transparent">
-                <div className="max-w-7xl mx-auto">
+                <div className="max-w-[1600px] mx-auto">
+                    {/* Orphaned Order Banner */}
+                    {order?.status === 'Orphaned' && (
+                        <div className="mb-8 p-6 bg-amber-500/10 border-2 border-amber-500/30 rounded-[2rem] flex items-center gap-6 animate-in slide-in-from-top-4 duration-500 shadow-xl shadow-amber-500/5">
+                            <div className="p-4 bg-amber-500/20 rounded-2xl">
+                                <AlertCircle className="w-8 h-8 text-amber-500 animate-pulse" />
+                            </div>
+                            <div className="flex-1">
+                                <h3 className="text-lg font-black text-amber-500 uppercase tracking-tight">Modo Limpieza de Inventario</h3>
+                                <p className="text-sm text-amber-200/70 font-bold leading-relaxed">
+                                    Esta orden ya no existe en el sistema central (Odoo). Para evitar inventario fantasma, el sistema requiere que **ANULE** todos los bultos asociados.
+                                    Una vez que la orden esté vacía, se cancelará automáticamente en el WMS.
+                                </p>
+                            </div>
+                            <div className="px-6 py-2 bg-amber-500 text-black font-black text-[10px] rounded-full uppercase tracking-widest shadow-lg">
+                                ACCIÓN REQUERIDA
+                            </div>
+                        </div>
+                    )}
+
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
 
                         {/* Left: Input Section */}
-                        <div className="lg:col-span-5 space-y-8 animate-in slide-in-from-left duration-500">
+                        <div className="lg:col-span-5 xl:col-span-4 space-y-8 animate-in slide-in-from-left duration-500">
                             <div className="bg-corp-nav/40 backdrop-blur-md rounded-[2.5rem] p-10 border border-corp-secondary/50 shadow-2xl space-y-8">
 
                                 {/* Mode Switch - Refactored to Standard/Crossdock Tabs */}
@@ -364,7 +459,7 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
                                         onClick={() => navigate(`/inbound/receive/standard/${orderId}`)}
                                         className={`flex-1 py-4 text-[10px] font-black uppercase tracking-[0.2em] rounded-xl transition-all ${workingMode === 'standard' ? 'bg-corp-accent text-white shadow-xl shadow-black/40' : 'text-slate-500 hover:text-slate-300'}`}
                                     >
-                                        RECEPCIÓN ESTÁNDAR
+                                        STANDARD RECEPTION
                                     </button>
                                     <button
                                         onClick={() => navigate(`/inbound/receive/crossdock/${orderId}`)}
@@ -401,11 +496,12 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
                                                         ref={inputRef}
                                                         type="text"
                                                         value={scanValue}
-                                                        onChange={(e) => setScanValue(e.target.value)}
-                                                        className="w-full text-3xl pl-16 pr-6 py-6 bg-slate-900/60 border-2 border-corp-secondary rounded-3xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono uppercase text-white placeholder:text-slate-500 shadow-inner"
-                                                        placeholder="WAITING FOR SCAN..."
+                                                        onChange={handleScanValueChange}
+                                                        disabled={isReadOnly}
+                                                        className={`w-full text-3xl pl-16 pr-6 py-6 bg-slate-900/60 border-2 rounded-3xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono uppercase text-white placeholder:text-slate-500 shadow-inner ${isReadOnly ? 'border-amber-500/20 opacity-50 cursor-not-allowed' : 'border-corp-secondary'}`}
+                                                        placeholder={isReadOnly ? "ORDEN CERRADA" : "WAITING FOR SCAN..."}
                                                     />
-                                                    <ScanLine className="absolute left-6 top-1/2 -translate-y-1/2 w-8 h-8 text-slate-500 group-focus-within:text-blue-400 transition-colors animate-pulse" />
+                                                    <ScanLine className={`absolute left-6 top-1/2 -translate-y-1/2 w-8 h-8 ${isReadOnly ? 'text-amber-500/30' : 'text-slate-500 group-focus-within:text-blue-400 animate-pulse'}`} />
                                                 </div>
 
                                                 {/* Compact Item Details - Moved from bottom card */}
@@ -466,11 +562,11 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
                                                         <button
                                                             type="button"
                                                             onClick={() => setSelectedPkgId('manual')}
-                                                            className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${selectedPkgId === 'manual' ? 'bg-slate-700/40 border-slate-500' : 'bg-slate-900/40 border-corp-secondary/50 hover:border-slate-600'}`}
+                                                            className={`flex-1 flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${selectedPkgId === 'manual' ? 'bg-slate-700/40 border-slate-500' : 'bg-slate-900/40 border-corp-secondary/50 hover:border-slate-600'}`}
                                                         >
                                                             <div className="flex items-center gap-3">
                                                                 <Calculator className={`w-5 h-5 ${selectedPkgId === 'manual' ? 'text-slate-300' : 'text-slate-600'}`} />
-                                                                <span className="text-sm font-black text-slate-400 uppercase tracking-tight">Ingreso Manual / Genérico</span>
+                                                                <span className="text-sm font-black text-slate-400 uppercase tracking-tight">Manual / Generic Entry</span>
                                                             </div>
                                                             {selectedPkgId === 'manual' && <CheckCircle2 className="w-5 h-5 text-slate-400" />}
                                                         </button>
@@ -592,16 +688,16 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
                                     <div className="flex flex-col">
                                         <button
                                             type="submit"
-                                            disabled={isReceiving || !scanValue}
+                                            disabled={isReceiving || !scanValue || isReadOnly}
                                             className={`w-full py-6 rounded-3xl font-black text-xl shadow-2xl transform active:scale-95 transition-all flex items-center justify-center space-x-3 border
-                                                    ${isReceiving ? 'bg-emerald-900/40 text-emerald-800 border-emerald-900/40 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/20 border-emerald-400/20'}`}
+                                                    ${(isReceiving || isReadOnly) ? 'bg-slate-800 text-slate-600 border-slate-700 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/20 border-emerald-400/20'}`}
                                         >
                                             {isReceiving ? (
                                                 <div className="w-8 h-8 border-4 border-white/30 border-t-white rounded-full animate-spin" />
                                             ) : (
                                                 <>
-                                                    <CheckCircle2 className="w-6 h-6" />
-                                                    <span>RECEIVE</span>
+                                                    {isReadOnly ? <ScanLine className="w-6 h-6" /> : <CheckCircle2 className="w-6 h-6" />}
+                                                    <span>{isReadOnly ? 'READ ONLY' : 'RECEIVE'}</span>
                                                 </>
                                             )}
                                         </button>
@@ -670,23 +766,24 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
 
                         </div>
 
-                        {/* Right: Items List */}
-                        <div className="lg:col-span-7 animate-in slide-in-from-right duration-500">
-                            <div className="bg-corp-nav/40 border border-corp-secondary/50 rounded-[2.5rem] shadow-2xl overflow-hidden h-full flex flex-col">
+                        {/* Right Column: Requisition Lines & Activity Feed (Side-by-Side) */}
+                        <div className="lg:col-span-12 xl:col-span-8 flex flex-col xl:flex-row gap-6 animate-in slide-in-from-right duration-500">
+                            {/* REQUISITION LINES */}
+                            <div className="flex-1 bg-corp-nav/40 border border-corp-secondary/50 rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col min-h-[400px]">
                                 <div className="p-8 bg-corp-accent/10 border-b border-corp-secondary/30 flex items-center justify-between">
                                     <div>
                                         <h3 className="font-black text-white text-md tracking-[0.2em] uppercase">REQUISITION LINES</h3>
                                         <p className="text-xs text-slate-500 font-bold mt-1 uppercase tracking-widest">REAL-TIME PROGRESS CONTROL</p>
                                     </div>
                                     <div className="bg-corp-base/50 px-5 py-2 rounded-xl border border-corp-secondary/30">
-                                        <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">{order.lines.length} TOTAL SKUS</span>
+                                        <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">{order?.lines.length || 0} TOTAL SKUS</span>
                                     </div>
                                 </div>
-                                <ul className="divide-y divide-corp-secondary/10 flex-1 overflow-y-auto custom-scrollbar">
-                                    {order.lines.map((line: any, index: number) => {
+                                <ul className="divide-y divide-corp-secondary/10 flex-1 overflow-y-auto custom-scrollbar max-h-[600px]">
+                                    {order?.lines.map((line: any, index: number) => {
                                         const isComplete = line.receivedQty >= line.expectedQty;
                                         return (
-                                            <li key={`${line.sku}-${index}`} className={`p-6 flex items-center justify-between transition-all ${isComplete ? 'bg-corp-base/20 opacity-40' : 'hover:bg-corp-accent/5'}`}>
+                                            <li key={`${line.sku}-${index}`} className={`p-6 flex items-center justify-between transition-all ${isComplete ? 'bg-corp-base/20 opacity-40' : 'hover:bg-corp_accent/5'}`}>
                                                 <div className="flex items-center space-x-6">
                                                     <div className={`p-4 rounded-2xl border transition-colors ${isComplete ? 'bg-slate-800 border-slate-700' : 'bg-corp-base border-corp-secondary text-blue-400'}`}>
                                                         <Package className="w-7 h-7" />
@@ -704,7 +801,7 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
                                                                 <div className="flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 rounded-md">
                                                                     <CheckCircle2 className="w-3 h-3 text-emerald-500" />
                                                                     <Camera className="w-3 h-3 text-emerald-500" />
-                                                                    <span className="text-[8px] font-black text-emerald-500 uppercase tracking-tighter">✅📷 Muestra Recibida</span>
+                                                                    <span className="text-[8px] font-black text-emerald-500 uppercase tracking-tighter">Sample Received</span>
                                                                 </div>
                                                             )}
                                                         </div>
@@ -717,12 +814,6 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
                                                                         <span>{line.sides}</span>
                                                                     </>
                                                                 )}
-                                                                {(line.category && line.category !== '' && line.category !== 'N/A') && (
-                                                                    <>
-                                                                        <span className="text-blue-900/20">|</span>
-                                                                        <span className="text-white/60">{line.category}</span>
-                                                                    </>
-                                                                )}
                                                             </div>
                                                             <span className="truncate opacity-80">
                                                                 {(line.productName || '').replace(/^\[.*?\]\s*/, '')}
@@ -733,27 +824,21 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
                                                 <div className="text-right space-y-2">
                                                     <div className="flex items-center justify-end space-x-4">
                                                         <div className="text-right">
-                                                            <span className={`text-2xl font-black font-mono ${isComplete ? 'text-emerald-400' : 'text-white'}`}>
-                                                                {line.receivedQty}
-                                                            </span>
-                                                            <span className="text-slate-600 font-black mx-2">/</span>
-                                                            <span className="text-sm font-black text-slate-500">
-                                                                {line.expectedQty}
-                                                            </span>
-                                                        </div>
-                                                        <div className="text-right">
-                                                            <span className="text-[10px] font-bold text-slate-500 uppercase block">RECEIVED</span>
-                                                            <span className={`text-sm font-black font-mono ${line.receivedQty >= line.expectedQty ? 'text-emerald-400' : 'text-white'}`}>
+                                                            <span className={`text-2xl font-black font-mono ${line.receivedQty >= line.expectedQty ? 'text-emerald-400' : 'text-white'}`}>
                                                                 {line.receivedQty} <span className="text-slate-500 text-[10px]">/ {line.expectedQty}</span>
                                                             </span>
+                                                            {!isReadOnly && (
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setManagingSku(line.sku);
+                                                                    }}
+                                                                    className="ml-3 px-2 py-1 bg-slate-800 hover:bg-slate-700 text-[9px] font-black text-slate-400 uppercase rounded border border-slate-700 transition-colors"
+                                                                >
+                                                                    Manage
+                                                                </button>
+                                                            )}
                                                         </div>
-                                                    </div>
-                                                    {isComplete && <CheckCircle2 className="w-6 h-6 text-emerald-500" />}
-                                                    <div className="w-32 h-1.5 bg-corp-base rounded-full overflow-hidden border border-corp-secondary/20">
-                                                        <div
-                                                            className={`h-full transition-all duration-500 ${isComplete ? 'bg-emerald-500' : 'bg-blue-600'}`}
-                                                            style={{ width: `${Math.min(100, (line.receivedQty / line.expectedQty) * 100)}%` }}
-                                                        ></div>
                                                     </div>
                                                 </div>
                                             </li>
@@ -761,93 +846,140 @@ const ReceiveStation: React.FC<ReceiveStationProps> = ({ mode: rfidMode }) => {
                                     })}
                                 </ul>
                             </div>
+
+                            {/* RECENT ACTIVITY FEED (Side Panel) */}
+                            <div className="xl:w-80 shrink-0">
+                                <ActivityFeed
+                                    items={scannedHistory}
+                                    onVoid={handleVoidLpn}
+                                    isReadOnly={isReadOnly}
+                                />
+                            </div>
                         </div>
                     </div>
                 </div>
             </main>
 
             {/* Photo Requirement Wizard */}
-            {showPhotoWizard && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-                    <div className="bg-corp-nav border-2 border-amber-500/50 rounded-[3rem] shadow-[0_0_100px_rgba(245,158,11,0.2)] max-w-xl w-full p-10 overflow-hidden relative group">
-                        {/* Decorative Background Glow */}
-                        <div className="absolute -top-24 -right-24 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl group-hover:bg-amber-500/20 transition-all duration-700"></div>
+            {
+                showPhotoWizard && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+                        <div className="bg-corp-nav border-2 border-amber-500/50 rounded-[3rem] shadow-[0_0_100px_rgba(245,158,11,0.2)] max-w-xl w-full p-10 overflow-hidden relative group">
+                            {/* Decorative Background Glow */}
+                            <div className="absolute -top-24 -right-24 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl group-hover:bg-amber-500/20 transition-all duration-700"></div>
 
-                        <div className="relative flex flex-col items-center text-center space-y-8">
-                            <div className="p-8 bg-amber-500/10 rounded-full border border-amber-500/20 shadow-inner group-hover:scale-110 transition-transform duration-500">
-                                <Camera className="w-16 h-16 text-amber-500" />
-                            </div>
+                            <div className="relative flex flex-col items-center text-center space-y-8">
+                                <div className="p-8 bg-amber-500/10 rounded-full border border-amber-500/20 shadow-inner group-hover:scale-110 transition-transform duration-500">
+                                    <Camera className="w-16 h-16 text-amber-500" />
+                                </div>
 
-                            <div className="space-y-4">
-                                <h2 className="text-4xl font-black text-white tracking-tight uppercase">Photo Required</h2>
-                                <div className="h-1.5 w-24 bg-amber-500 mx-auto rounded-full"></div>
-                                <p className="text-slate-400 text-lg font-medium leading-relaxed px-4">
-                                    Product <span className="text-amber-400 font-black">{selectedSkuForPhoto}</span> has no image in the system.
-                                </p>
-                            </div>
-
-                            <div className="bg-amber-900/20 border border-amber-500/30 p-6 rounded-3xl w-full flex items-start space-x-4">
-                                <AlertCircle className="w-6 h-6 text-amber-500 shrink-0 mt-1" />
-                                <div className="text-left">
-                                    <p className="text-amber-200 font-black text-sm uppercase tracking-wider mb-1">Mandatory Action</p>
-                                    <p className="text-amber-100/70 text-xs leading-relaxed font-bold">
-                                        You MUST receive <span className="text-amber-400">1 unit</span> at the <span className="text-white">PHOTO-STATION</span> before proceeding with stock reception.
+                                <div className="space-y-4">
+                                    <h2 className="text-4xl font-black text-white tracking-tight uppercase">Photo Required</h2>
+                                    <div className="h-1.5 w-24 bg-amber-500 mx-auto rounded-full"></div>
+                                    <p className="text-slate-400 text-lg font-medium leading-relaxed px-4">
+                                        Product <span className="text-amber-400 font-black">{selectedSkuForPhoto}</span> has no image in the system.
                                     </p>
                                 </div>
-                            </div>
 
-                            <div className="flex flex-col space-y-4 w-full">
-                                <button
-                                    onClick={() => {
-                                        setShowPhotoWizard(false);
-                                        setScanValue('');
-                                        if (inputRef.current) inputRef.current.focus();
-                                    }}
-                                    className="w-full py-5 bg-amber-500 hover:bg-amber-400 text-black font-black text-xl rounded-2xl shadow-2xl transition-all transform active:scale-95 uppercase tracking-widest"
-                                >
-                                    Understood
-                                </button>
-                                <p className="text-[9px] text-slate-500 font-bold uppercase tracking-[0.2em]">Quality Control Protocol v2.5</p>
+                                <div className="bg-amber-900/20 border border-amber-500/30 p-6 rounded-3xl w-full flex items-start space-x-4">
+                                    <AlertCircle className="w-6 h-6 text-amber-500 shrink-0 mt-1" />
+                                    <div className="text-left">
+                                        <p className="text-amber-200 font-black text-sm uppercase tracking-wider mb-1">Mandatory Action</p>
+                                        <p className="text-amber-100/70 text-xs leading-relaxed font-bold">
+                                            You MUST receive <span className="text-amber-400">1 unit</span> at the <span className="text-white">PHOTO-STATION</span> before proceeding with stock reception.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-col space-y-4 w-full">
+                                    <button
+                                        onClick={() => {
+                                            setShowPhotoWizard(false);
+                                            setScanValue('');
+                                            if (inputRef.current) inputRef.current.focus();
+                                        }}
+                                        className="w-full py-5 bg-amber-500 hover:bg-amber-400 text-black font-black text-xl rounded-2xl shadow-2xl transition-all transform active:scale-95 uppercase tracking-widest"
+                                    >
+                                        Understood
+                                    </button>
+                                    <p className="text-[9px] text-slate-500 font-bold uppercase tracking-[0.2em]">Quality Control Protocol v2.5</p>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
-            {printUrl && (
-                <iframe
-                    src={printUrl}
-                    style={{ display: 'none' }}
-                    onLoad={() => {
-                        // Reset the URL after loading so it can be re-triggered
-                        setTimeout(() => setPrintUrl(null), 1000);
-                    }}
-                />
-            )}
+            {
+                printUrl && (
+                    <iframe
+                        src={printUrl}
+                        style={{ display: 'none' }}
+                        onLoad={() => {
+                            // Reset the URL after loading so it can be re-triggered
+                            setTimeout(() => setPrintUrl(null), 1000);
+                        }}
+                    />
+                )
+            }
 
-            {showUpdateModal && selectedLine && selectedPkgId !== 'manual' && (
-                <PackagingUpdateModal
-                    isOpen={showUpdateModal}
-                    onClose={() => setShowUpdateModal(false)}
-                    packagingName={selectedLine.packagings.find((p: any) => p.odooId === selectedPkgId)?.name || ''}
-                    currentData={{
-                        qty: selectedLine.packagings.find((p: any) => p.odooId === selectedPkgId)?.qty || 0,
-                        weight: selectedLine.packagings.find((p: any) => p.odooId === selectedPkgId)?.weight || 0,
-                        length: selectedLine.packagings.find((p: any) => p.odooId === selectedPkgId)?.length || 0,
-                        width: selectedLine.packagings.find((p: any) => p.odooId === selectedPkgId)?.width || 0,
-                        height: selectedLine.packagings.find((p: any) => p.odooId === selectedPkgId)?.height || 0
-                    }}
-                    newData={{
-                        qty: Number(unitsPerLpn),
-                        weight: Number(manualWeight),
-                        length: Number(manualLength),
-                        width: Number(manualWidth),
-                        height: Number(manualHeight)
-                    }}
-                    onConfirm={handlePackagingUpdateConfirm}
-                />
-            )}
-        </div>
+            {
+                showUpdateModal && selectedLine && selectedPkgId !== 'manual' && (
+                    <PackagingUpdateModal
+                        isOpen={showUpdateModal}
+                        onClose={() => setShowUpdateModal(false)}
+                        packagingName={selectedLine.packagings.find((p: any) => p.odooId === selectedPkgId)?.name || ''}
+                        currentData={{
+                            qty: selectedLine.packagings.find((p: any) => p.odooId === selectedPkgId)?.qty || 0,
+                            weight: selectedLine.packagings.find((p: any) => p.odooId === selectedPkgId)?.weight || 0,
+                            length: selectedLine.packagings.find((p: any) => p.odooId === selectedPkgId)?.length || 0,
+                            width: selectedLine.packagings.find((p: any) => p.odooId === selectedPkgId)?.width || 0,
+                            height: selectedLine.packagings.find((p: any) => p.odooId === selectedPkgId)?.height || 0
+                        }}
+                        newData={{
+                            qty: Number(unitsPerLpn),
+                            weight: Number(manualWeight),
+                            length: Number(manualLength),
+                            width: Number(manualWidth),
+                            height: Number(manualHeight)
+                        }}
+                        onConfirm={async (action: string) => {
+                            setShowUpdateModal(false);
+                            const finalParams = {
+                                ...pendingParams,
+                                packagingAction: action,
+                                selectedPackagingId: typeof selectedPkgId === 'number' ? selectedPkgId : undefined
+                            };
+                            setPendingParams(null);
+                            await executeReception(finalParams, finalParams.autoPrintOverride);
+                        }}
+                    />
+                )
+            }
+
+            {
+                managingSku && order && (
+                    <LpnManagementModal
+                        sku={managingSku}
+                        orderId={order.orderNumber}
+                        onClose={() => setManagingSku(null)}
+                        onVoidSuccess={() => {
+                            // Refresh order
+                            navigate(window.location.pathname, { replace: true });
+                        }}
+                    />
+                )
+            }
+
+            {
+                isOrphaned && (
+                    <CriticalStopModal
+                        orderNumber={order.orderNumber}
+                        message={orphanError}
+                    />
+                )
+            }
+        </div >
     );
 };
 

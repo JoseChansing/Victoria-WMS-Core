@@ -14,7 +14,17 @@ namespace Victoria.Inventory.Domain.Aggregates
         public int TotalUnits { get; set; }
         public bool IsCrossdock { get; set; }
         public string? TargetOutboundOrder { get; set; }
+        public string? ProcessedDate { get; set; }
         public List<InboundLine> Lines { get; set; } = new();
+
+        public void RevertReception(string sku, int qty)
+        {
+            var line = Lines.Find(l => l.Sku == sku);
+            if (line != null)
+            {
+                line.ReceivedQty = Math.Max(0, line.ReceivedQty - qty);
+            }
+        }
     }
 
     public class InboundLine

@@ -1,6 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using Victoria.Core.Interfaces;
 using System.Text.Json;
+using Marten;
+using Victoria.Inventory.Domain.Aggregates;
+using Victoria.Core.Models;
 
 namespace Victoria.API.Controllers
 {
@@ -9,11 +12,13 @@ namespace Victoria.API.Controllers
     public class DiagnosticsController : ControllerBase
     {
         private readonly IOdooRpcClient _odooClient;
+        private readonly IDocumentSession _session;
         private readonly ILogger<DiagnosticsController> _logger;
 
-        public DiagnosticsController(IOdooRpcClient odooClient, ILogger<DiagnosticsController> logger)
+        public DiagnosticsController(IOdooRpcClient odooClient, IDocumentSession session, ILogger<DiagnosticsController> logger)
         {
             _odooClient = odooClient;
+            _session = session;
             _logger = logger;
         }
 
@@ -167,5 +172,65 @@ namespace Victoria.API.Controllers
                 return BadRequest(new { error = ex.Message });
             }
         }
+
+        [HttpPost("nuke-inbound")]
+        public async Task<IActionResult> NukeInbound()
+        {
+            try
+            {
+                _logger.LogWarning("[RESTORE] NUCLEAR RESET INITIATED. Clearing all LPNs and Inbound data.");
+
+                // 1. Delete all LPNs
+                _session.DeleteWhere<Lpn>(x => true);
+
+                // 2. Delete all Inbound Orders
+                _session.DeleteWhere<InboundOrder>(x => true);
+
+                // 3. Clear Sync States
+                _session.DeleteWhere<SyncState>(x => x.Id == "InboundSync");
+                _session.DeleteWhere<SyncState>(x => x.Id == "InboundOrderSync");
+
+                await _session.SaveChangesAsync();
+
+                return Ok(new { 
+                    message = "Environment reset complete. Local inbound orders and LPNs cleared.", 
+                    status = "Ready for fresh test"
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[API-ERROR] Nuclear reset failed.");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+        [HttpGet("odoo-pickings")]
+        public async Task<IActionResult> InspectPickings()
+        {
+            try
+            {
+                // Verify Auth
+                var uid = await _odooClient.AuthenticateAsync();
+                
+                var pickingDomain = new object[][] { };
+                var pickingFields = new string[] { "name", "state", "picking_type_code", "write_date" };
+                var pickings = await _odooClient.SearchAndReadAsync<dynamic>("stock.picking", pickingDomain, pickingFields, limit: 10);
+
+                var productDomain = new object[][] { };
+                var productFields = new string[] { "name", "default_code" };
+                var products = await _odooClient.SearchAndReadAsync<dynamic>("product.product", productDomain, productFields, limit: 5);
+
+                return Ok(new { 
+                    Uid = uid,
+                    Status = uid > 0 ? "Authenticated" : "Failed",
+                    Pickings = pickings,
+                    Products = products
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = ex.Message, stack = ex.StackTrace });
+            }
+        }
+
     }
 }

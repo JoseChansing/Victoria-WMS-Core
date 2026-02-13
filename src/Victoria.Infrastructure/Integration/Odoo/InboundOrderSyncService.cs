@@ -106,15 +106,17 @@ namespace Victoria.Infrastructure.Integration.Odoo
         {
             _logger?.LogInformation("[OdooSync-Marten] Persisting {Type} Picking: {Ref}", type, odooPicking.Name);
 
-            // 1. Check for existing order to preserve local progress (ReceivedQty)
+            // 1. Load Existing Order
             var existingOrder = await _session.LoadAsync<InboundOrder>(odooPicking.Id.ToString());
 
-            // STATUS GUARD: If there is local progress, ABORT Odoo Sync to prevent data loss.
-            // When work starts, Victoria WMS takes full control of the order lines.
-            if (existingOrder != null && existingOrder.Lines.Any(l => l.ReceivedQty > 0))
+            // 2. SMART GUARD: Allow Active/Pending, Block Completed/Cancelled
+            if (existingOrder != null)
             {
-                _logger.LogWarning("[SYNC-GUARD] Order {Ref} (ID: {Id}) has local progress. Skipping Odoo update to prevent data loss.", odooPicking.Name, odooPicking.Id);
-                return;
+                if (existingOrder.Status == "Completed" || existingOrder.Status == "Cancelled")
+                {
+                    _logger.LogInformation("[SYNC-GUARD] Order {Ref} is {Status}. Skipping update.", odooPicking.Name, existingOrder.Status);
+                    return;
+                }
             }
 
             var lines = new List<InboundLine>();
@@ -122,29 +124,44 @@ namespace Victoria.Infrastructure.Integration.Odoo
             {
                 long productId = ExtractProductId(l.Product_Id);
 
-                // BUSCAR PRODUCTO PARA OBTENER SKU
+                // Find Product Map
                 var product = await _session.Query<Product>()
                     .Where(x => x.OdooId == productId)
                     .FirstOrDefaultAsync();
                 
-                // 2. Find local progress: Try MoveId first, then SKU as fallback
+                // 3. SMART MERGE STRATEGY
+                // Find matching local line to preserve progress
                 var existingLine = existingOrder?.Lines.FirstOrDefault(x => x.OdooMoveId == l.Id)
                                 ?? existingOrder?.Lines.FirstOrDefault(x => x.Sku == product?.Sku);
                 
-                // URGENT FIX: Ensure ReceivedQty is strictly carried over
-                int preservedQty = 0;
-                if (existingLine != null) {
-                    preservedQty = existingLine.ReceivedQty;
-                    if (preservedQty > 0) {
-                         _logger.LogInformation("[SYNC-HARDENING] Preserving local qty {Qty} for SKU {Sku}", preservedQty, product?.Sku ?? "Unknown");
+                int preservedReceived = 0;
+                int finalExpected = (int)l.Product_Uom_Qty;
+                
+                if (existingLine != null) 
+                {
+                    // A. PRESERVE RECEIVED QTY (Critical Rule)
+                    preservedReceived = existingLine.ReceivedQty;
+
+                    // B. PRESERVE EXPECTED QTY (Critical Rule from User)
+                    // We trust local truth for ExpectedQty if we are already working on it.
+                    if (existingOrder?.Status != "Pending") 
+                    {
+                        finalExpected = existingLine.ExpectedQty;
+                    }
+
+                    // C. METADATA PATCHING (The Goal)
+                    // If we found the line by SKU but it missed the MoveID, we are fixing it now effectively by assigning it below.
+                    if ((existingLine.OdooMoveId == null || existingLine.OdooMoveId == 0) && l.Id > 0)
+                    {
+                         _logger.LogWarning($"[SYNC-MERGE] Updating Metadata for Active Order {odooPicking.Name}. MoveId {l.Id} patched for SKU {existingLine.Sku}. Quantity preserved: {preservedReceived}.");
                     }
                 }
 
                 var line = new InboundLine
                 {
-                    ExpectedQty = (int)l.Product_Uom_Qty,
-                    ReceivedQty = preservedQty, // STRICT PRESERVATION
-                    OdooMoveId = l.Id,
+                    ExpectedQty = finalExpected,
+                    ReceivedQty = preservedReceived, 
+                    OdooMoveId = l.Id, // Always take Odoo's ID (this performs the fix)
                     Sku = product?.Sku ?? $"ODOO-{l.Product_Id}"
                 };
 
@@ -168,14 +185,98 @@ namespace Victoria.Infrastructure.Integration.Odoo
                 Id = odooPicking.Id.ToString(),
                 OrderNumber = odooPicking.Name,
                 Supplier = "Odoo Supplier",
-                Status = existingOrder?.Status ?? "Pending", // PRESERVE STATUS (e.g. Received)
+                // Preserve status if exists, otherwise Pending
+                Status = existingOrder?.Status ?? "Pending", 
                 Lines = lines,
                 TotalUnits = lines.Sum(l => l.ExpectedQty),
+                IsCrossdock = existingOrder?.IsCrossdock ?? false,
+                TargetOutboundOrder = existingOrder?.TargetOutboundOrder,
                 Date = DateTime.UtcNow.ToString("yyyy-MM-dd")
             };
 
             _session.Store(order);
             await _session.SaveChangesAsync();
+        }
+
+        public async Task<int> PerformCleanupGuardian(IOdooRpcClient odooClient)
+        {
+            _logger.LogInformation("[GUARDIAN] Iniciando validación de consistencia con Odoo...");
+
+            // 1. Obtener todas las órdenes locales activas (no Completadas/Canceladas)
+            var localInboundOrders = await _session.Query<InboundOrder>()
+                .Where(x => x.Status != "Completed" && x.Status != "Cancelled" && x.Status != "Orphaned")
+                .ToListAsync();
+
+            if (!localInboundOrders.Any()) return 0;
+
+            int actionCount = 0;
+
+            foreach (var localOrder in localInboundOrders)
+            {
+                // 2. Verificar existencia en Odoo (Search ID)
+                // Usamos un domain simple por ID
+                var odooExists = await odooClient.SearchAndReadAsync<OdooOrderDto>(
+                    "stock.picking", 
+                    new object[][] { new object[] { "id", "=", int.Parse(localOrder.Id) } }, 
+                    new string[] { "id", "state" }
+                );
+
+                if (odooExists == null || odooExists.Count == 0)
+                {
+                    // CASE 1: Order Deleted in Odoo
+                    actionCount += await HandleMissingOrCancelledOrder(localOrder, "deleted");
+                }
+                else
+                {
+                    // CASE 2: Order Exists but Cancelled
+                    var odooOrder = odooExists[0];
+                    if (odooOrder.State == "cancel")
+                    {
+                        actionCount += await HandleMissingOrCancelledOrder(localOrder, "cancelled");
+                    }
+                }
+            }
+
+            await _session.SaveChangesAsync();
+            return actionCount;
+        }
+
+        private async Task<int> HandleMissingOrCancelledOrder(InboundOrder localOrder, string reason)
+        {
+            int actionsPerformed = 0;
+            // 3. Evaluar Seguridad (Guardián)
+            bool hasWorkDone = localOrder.Lines.Any(l => l.ReceivedQty > 0);
+
+            if (!hasWorkDone)
+            {
+                _logger.LogWarning($"[GUARDIAN] Order {localOrder.OrderNumber} matches '{reason}' criteria and has NO work. Auto-Cancelling local copy.");
+                _session.Delete(localOrder);
+                actionsPerformed++;
+            }
+            else
+            {
+                // Verify if already orphaned to avoid spamming notifications
+                if (localOrder.Status != "Orphaned")
+                {
+                    _logger.LogError($"[GUARDIAN] ALERTA: Orden {localOrder.OrderNumber} matches '{reason}' criteria but HAS RECEIVED INVENTORY. Marking as ORPHANED/BLOCKED.");
+                    localOrder.Status = "Orphaned";
+                    _session.Store(localOrder);
+
+                    // 4. Crear Notificación de Sistema
+                    var notification = new SystemNotification
+                    {
+                        Title = "Orden Huérfana Detectada",
+                        Message = $"La orden {localOrder.OrderNumber} fue {reason} en Odoo pero tiene inventario recibido en Victoria. Se ha bloqueado para proteger la integridad.",
+                        Severity = "Critical",
+                        ReferenceId = localOrder.OrderNumber,
+                        CreatedAt = DateTime.UtcNow,
+                        IsRead = false
+                    };
+                    _session.Store(notification);
+                    actionsPerformed++;
+                }
+            }
+            return actionsPerformed;
         }
     }
 }
