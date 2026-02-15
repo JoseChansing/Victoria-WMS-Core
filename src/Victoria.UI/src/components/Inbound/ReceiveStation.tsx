@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { ArrowLeft, Package, CheckCircle2, AlertCircle, ScanLine, Calculator, Printer, Radio, Camera, Zap, AlertTriangle, XCircle, Lock } from 'lucide-react';
+import { ArrowLeft, Package, CheckCircle2, AlertCircle, ScanLine, Calculator, Printer, Radio, Camera, Zap, AlertTriangle, XCircle } from 'lucide-react';
 import { useInbound } from '../../hooks/useInbound';
 import { zebraService } from '../../services/zebra.service';
 import { PackagingUpdateModal } from './PackagingUpdateModal';

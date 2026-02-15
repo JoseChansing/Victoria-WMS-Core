@@ -13,7 +13,7 @@ namespace Victoria.Infrastructure.Services
     {
         private readonly IServiceProvider _serviceProvider;
         private readonly ILogger<RecurringSyncWorker> _logger;
-        private readonly TimeSpan _interval = TimeSpan.FromMinutes(1); // 1 Minute Interval
+        private readonly TimeSpan _interval = TimeSpan.FromSeconds(15); // optimized for dev
 
         public RecurringSyncWorker(IServiceProvider serviceProvider, ILogger<RecurringSyncWorker> logger)
         {
@@ -25,10 +25,10 @@ namespace Victoria.Infrastructure.Services
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            _logger.LogInformation($"[WORKER] Recurring Product Sync Worker started. Interval: {_interval.TotalMinutes} min.");
+            _logger.LogInformation($"[WORKER] Recurring Product Sync Worker started. Interval: {_interval.TotalSeconds} sec.");
 
             // Initial wait to let InitialDataLoader finish first if needed
-            await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+            await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
 
             while (!stoppingToken.IsCancellationRequested)
             {
@@ -42,23 +42,32 @@ namespace Victoria.Infrastructure.Services
                         var inboundService = scope.ServiceProvider.GetRequiredService<IInboundService>();
                         var odooClient = scope.ServiceProvider.GetRequiredService<IOdooRpcClient>();
 
-                        _logger.LogInformation("[WORKER] Syncing Products...");
-                        int prodCount = await productService.SyncAllAsync(odooClient);
-                        
-                        _logger.LogInformation("[WORKER] Syncing Inbound Orders...");
-                        int orderCount = await inboundService.SyncAllAsync(odooClient);
-
-                        // --- GUARDIAN LOGIC ---
-                        _guardianCycleCounter++;
-                        if (_guardianCycleCounter >= 3)
+                        // 1. SYNC INBOUND ORDERS (PRIORITY)
+                        try 
                         {
+                            _logger.LogInformation("[WORKER] Syncing Inbound Orders...");
+                            int orderCount = await inboundService.SyncAllAsync(odooClient);
+                            
                             _logger.LogInformation("[WORKER] Executing Sync Guardian (Consistency Check)...");
                             int guardianActions = await inboundService.PerformCleanupGuardian(odooClient);
-                            _logger.LogInformation($"[WORKER] Guardian finished. Actions: {guardianActions}");
-                            _guardianCycleCounter = 0;
+                            _logger.LogInformation($"[WORKER] Inbound Sync finished. Orders: {orderCount}, Guardian Actions: {guardianActions}");
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "[WORKER] Error during Inbound Order sync. Continuing to Products...");
                         }
 
-                        _logger.LogInformation($"[WORKER] Incremental sync finished. Products: {prodCount}, Orders: {orderCount}.");
+                        // 2. SYNC PRODUCTS (BACKGROUND)
+                        try 
+                        {
+                            _logger.LogInformation("[WORKER] Syncing Products...");
+                            int prodCount = await productService.SyncAllAsync(odooClient);
+                            _logger.LogInformation($"[WORKER] Product sync finished. Total: {prodCount}.");
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "[WORKER] Error during Product sync.");
+                        }
                     }
                 }
                 catch (Exception ex)

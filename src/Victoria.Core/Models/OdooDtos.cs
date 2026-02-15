@@ -105,6 +105,8 @@ namespace Victoria.Core.Models
         public string Picking_Type_Code { get; set; } = string.Empty;
         public string Write_Date { get; set; } = string.Empty;
         public string? State { get; set; }
+        [JsonPropertyName("partner_id")]
+        public object? Partner_Id { get; set; }
         public List<OdooOrderLineDto> Lines { get; set; } = new();
     }
 }

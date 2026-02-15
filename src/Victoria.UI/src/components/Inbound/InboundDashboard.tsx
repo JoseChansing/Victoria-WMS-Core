@@ -1,6 +1,23 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Search, Filter, RefreshCw, Archive, AlertCircle, CheckCircle2, Clock, Calendar, Truck, Package, ChevronRight, MoreVertical, Zap, Lock, Info, AlertTriangle, XCircle, LayoutGrid, List, Settings, Eye, Loader2, ChevronLeft, CheckSquare } from 'lucide-react';
+import {
+    Search,
+    Filter,
+    RefreshCw,
+    CheckCircle2,
+    Clock,
+    Loader2,
+    CheckSquare,
+    Truck,
+    Calendar,
+    Zap,
+    Settings,
+    Eye,
+    ChevronRight,
+    AlertCircle,
+    ChevronLeft,
+    Lock
+} from 'lucide-react';
 import { useInbound } from '../../hooks/useInbound';
 import LpnManagementModal from './LpnManagementModal';
 
@@ -36,7 +53,9 @@ const InboundDashboard: React.FC = () => {
 
             const matchesStatus =
                 statusFilter === 'All' ||
-                (statusFilter === 'Crossdock' ? order.isCrossdock : order.status === statusFilter);
+                (statusFilter === 'Crossdock' ? order.isCrossdock :
+                    statusFilter === 'Completed' ? (order.status === 'Completed' || order.status === 'Cancelled') :
+                        order.status === statusFilter);
 
             const orderDate = new Date(order.date);
             const matchesDateFrom = !dateFrom || orderDate >= new Date(dateFrom);
@@ -239,6 +258,7 @@ const InboundDashboard: React.FC = () => {
                                 <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">PO Reference</th>
                                 <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Partner / Supplier</th>
                                 <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Date</th>
+                                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Finalized</th>
                                 <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400 text-center">Progress</th>
                                 <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Status</th>
                                 <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400 text-right">Actions</th>
@@ -264,20 +284,37 @@ const InboundDashboard: React.FC = () => {
                                             <span className="text-sm font-medium text-slate-300">{order.supplier}</span>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <div className="flex items-center gap-1.5 text-slate-400">
-                                                <Calendar className="w-3.5 h-3.5" />
-                                                <span className="text-xs font-medium">{new Date(order.date).toLocaleDateString()}</span>
+                                            <div className="flex flex-col">
+                                                <span className="text-xs font-medium text-slate-300">{new Date(order.date).toLocaleDateString()}</span>
+                                                <span className="text-[10px] text-slate-500 font-mono">
+                                                    {new Date(order.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                </span>
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <div className="flex flex-col gap-1.5 items-center">
-                                                <div className="w-24 bg-corp-base rounded-full h-1.5 overflow-hidden border border-corp-secondary/30">
-                                                    <div
-                                                        className={`h-full transition-all duration-700 ${progress >= 100 ? 'bg-emerald-500' : 'bg-corp-accent'}`}
-                                                        style={{ width: `${visualProgress}%` }}
-                                                    ></div>
+                                            {order.dateClosed ? (
+                                                <div className="flex flex-col">
+                                                    <span className="text-xs font-medium text-slate-300">{new Date(order.dateClosed).toLocaleDateString()}</span>
+                                                    <span className="text-[10px] text-slate-500 font-mono">
+                                                        {new Date(order.dateClosed).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                    </span>
                                                 </div>
-                                                <span className="text-[10px] font-bold text-slate-500">{progress}%</span>
+                                            ) : (
+                                                <span className="text-slate-600 font-mono text-xs">-</span>
+                                            )}
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex items-center gap-3 w-full max-w-[200px] mx-auto">
+                                                <span className="text-xs font-bold text-emerald-400 min-w-[24px] text-right">{receivedUnits}</span>
+                                                <div className="flex-1 flex flex-col gap-1">
+                                                    <div className="w-full bg-corp-base rounded-full h-1.5 overflow-hidden border border-corp-secondary/30">
+                                                        <div
+                                                            className={`h-full transition-all duration-700 ${progress >= 100 ? 'bg-emerald-500' : 'bg-corp-accent'}`}
+                                                            style={{ width: `${visualProgress}%` }}
+                                                        ></div>
+                                                    </div>
+                                                </div>
+                                                <span className="text-xs font-bold text-slate-500 min-w-[24px]">{order.totalUnits}</span>
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">

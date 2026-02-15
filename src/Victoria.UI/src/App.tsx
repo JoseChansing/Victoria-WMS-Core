@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider } from './context/AuthContext';
 import { LoginPage } from './features/auth/LoginPage';
 import { InventoryDashboard } from './features/inventory/InventoryDashboard';
+import { LpnMaster } from './features/inventory/LpnMaster';
 import { InventoryByItem } from './features/inventory/InventoryByItem';
 import { InventoryByLocation } from './features/inventory/InventoryByLocation';
 import { SkuMaster } from './features/inventory/SkuMaster';
@@ -12,9 +13,12 @@ import MainLayout from './components/MainLayout';
 import OutboundDashboard from './features/outbound/OutboundDashboard';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
+import { Toaster } from 'sonner';
+
 function App() {
   return (
     <AuthProvider>
+      <Toaster position="top-right" expand={true} richColors />
       <Router>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
@@ -113,7 +117,7 @@ function App() {
             element={
               <ProtectedRoute>
                 <MainLayout>
-                  <InventoryDashboard />
+                  <LpnMaster />
                 </MainLayout>
               </ProtectedRoute>
             }

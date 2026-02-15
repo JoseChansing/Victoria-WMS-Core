@@ -11,6 +11,7 @@ using Victoria.Inventory.Application.Commands;
 using Victoria.Core.Interfaces;
 using Victoria.Core.Models;
 using Victoria.Infrastructure.Integration.Odoo;
+using Victoria.Infrastructure.Services;
 using Microsoft.Extensions.Logging;
 using System.Text.Json.Serialization;
 using System.IO;
@@ -28,6 +29,7 @@ namespace Victoria.API.Controllers
         private readonly IInboundService _orderSync;
         private readonly IOdooRpcClient _odooClient;
         private readonly IOdooAdapter _odooAdapter;
+        private readonly InventoryTaskService _taskService;
         private readonly ILogger<InboundController> _logger;
 
         public InboundController(
@@ -38,6 +40,7 @@ namespace Victoria.API.Controllers
             IInboundService orderSync,
             IOdooRpcClient odooClient,
             IOdooAdapter odooAdapter,
+            InventoryTaskService taskService,
             ILogger<InboundController> logger)
         {
             _session = session;
@@ -47,6 +50,7 @@ namespace Victoria.API.Controllers
             _orderSync = orderSync;
             _odooClient = odooClient;
             _odooAdapter = odooAdapter;
+            _taskService = taskService;
             _logger = logger;
         }
 
@@ -120,6 +124,7 @@ namespace Victoria.API.Controllers
                     o.TotalUnits,
                     o.IsCrossdock,
                     o.TargetOutboundOrder,
+                    o.DateClosed,
                     Lines = o.Lines.Select(l => {
                         var isSampleInPhoto = samplesInPhoto.Any(s => s.Sku.Value == l.Sku && s.SelectedOrderId == o.Id);
                         return new {
@@ -339,6 +344,7 @@ namespace Victoria.API.Controllers
                         {
                             _logger.LogInformation("[INBOUND] Order {OrderNumber} was Orphaned and is now EMPTY. Auto-cancelling as requested.", order.OrderNumber);
                             order.Status = "Cancelled";
+                            order.DateClosed = DateTime.Now;
                             _session.Store(order);
                             await _session.SaveChangesAsync();
                         }
@@ -546,7 +552,29 @@ namespace Victoria.API.Controllers
             // 4. Mark order as closed/synced
             order.Status = "Completed";
             order.ProcessedDate = DateTime.UtcNow.ToString("yyyy-MM-dd");
+            order.DateClosed = DateTime.Now;
             _session.Store(order);
+
+            // 5. AUTO-GENERATE PUTAWAY TASK
+            try
+            {
+                var (taskId, warnings) = await _taskService.CreateAutoPutawayTaskAsync(id, order.OrderNumber, "SYSTEM");
+                
+                if (taskId.HasValue)
+                {
+                    _logger.LogInformation("[INBOUND] Auto-generated putaway task {TaskId} for order {OrderNumber}", taskId.Value, order.OrderNumber);
+                }
+                
+                foreach (var warning in warnings)
+                {
+                    _logger.LogWarning("[AUTO-PUTAWAY] {Warning}", warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[AUTO-PUTAWAY] Failed to create putaway task for order {OrderNumber}. LPNs remain in STAGE-RESERVE.", order.OrderNumber);
+                // Don't fail the close operation if putaway task creation fails
+            }
 
             await _session.SaveChangesAsync();
 
@@ -557,6 +585,35 @@ namespace Victoria.API.Controllers
             });
         }
 
+
+        [HttpPost("sync/products/force-full")]
+        public IActionResult ForceFullProductSync()
+        {
+            _logger.LogWarning("[API] Triggering MANUAL FULL PRODUCT SYNC (Background Task)");
+            
+            // Fire-and-forget background task
+            _ = Task.Run(async () => 
+            {
+                try 
+                {
+                    using (var scope = HttpContext.RequestServices.CreateScope())
+                    {
+                        var service = scope.ServiceProvider.GetRequiredService<IProductService>();
+                        var odoo = scope.ServiceProvider.GetRequiredService<IOdooRpcClient>();
+                        await service.SyncAllAsync(odoo, forceFull: true);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "[BACKGROUND-SYNC] Full Sync Failed");
+                }
+            });
+
+            return Accepted(new { 
+                Message = "Sincronización masiva iniciada en segundo plano. Revise los logs del servidor para ver el progreso.",
+                Note = "Este proceso puede tardar varios minutos."
+            });
+        }
 
         [HttpPost("sync/force")]
         public async Task<IActionResult> ForceSync()
@@ -576,6 +633,27 @@ namespace Victoria.API.Controllers
             catch (Exception ex)
             {
                 return BadRequest(new { Error = ex.Message });
+            }
+        }
+
+        [HttpPost("sync/order")]
+        public async Task<IActionResult> ForceSyncOrder([FromQuery] string orderNumber)
+        {
+            _logger.LogInformation("[API] Manual Order Injection Triggered for {Order}", orderNumber);
+            if (string.IsNullOrEmpty(orderNumber)) return BadRequest("orderNumber is required");
+            
+            try 
+            {
+                bool success = await _orderSync.SyncSingleOrderAsync(_odooClient, orderNumber);
+                if (success)
+                    return Ok(new { Message = $"Order {orderNumber} synced successfully." });
+                else
+                    return NotFound(new { Error = $"Order {orderNumber} not found in Odoo or injection failed." });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[API] Manual Order Injection failed for {Order}", orderNumber);
+                return StatusCode(500, new { Error = ex.Message });
             }
         }
 
@@ -672,6 +750,41 @@ namespace Victoria.API.Controllers
              {
                  return BadRequest(ex.Message);
              }
+        }
+
+        [HttpPost("debug/patch-dates")]
+        public async Task<IActionResult> DebugPatchDates([FromQuery] string orderNumber)
+        {
+            try
+            {
+                var order = await _session.Query<InboundOrder>()
+                    .FirstOrDefaultAsync(o => o.OrderNumber == orderNumber);
+
+                if (order == null) return NotFound($"Order {orderNumber} not found");
+
+                // Patch Creation Date to Now (Local)
+                order.Date = DateTime.Now.ToString("O");
+
+                // Patch Closed Date if Completed
+                if (order.Status == "Completed" && order.DateClosed == null)
+                {
+                    order.DateClosed = DateTime.Now;
+                }
+
+                _session.Store(order);
+                await _session.SaveChangesAsync();
+
+                return Ok(new { 
+                    Message = "Dates patched successfully.", 
+                    Order = order.OrderNumber, 
+                    NewDate = order.Date,
+                    NewDateClosed = order.DateClosed
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
         }
     }
 

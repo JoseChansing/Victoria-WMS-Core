@@ -25,6 +25,8 @@ interface Location {
     pickingSequence: number;
     maxWeight: number;
     maxVolume: number;
+    currentWeight: number;
+    currentVolume: number;
     barcode: string;
     occupancyStatus: 'Empty' | 'Partial' | 'Full';
     lpnCount: number;
@@ -292,14 +294,26 @@ export const LocationMaster = () => {
                                     <td className="px-6 py-4">
                                         <div className="flex flex-col gap-1.5">
                                             <div className="flex items-center gap-2">
-                                                <div className="w-12 h-1 bg-corp-base rounded-full overflow-hidden border border-corp-secondary/30">
-                                                    <div className="h-full bg-blue-500/70 w-1/3 shadow-[0_0_8px_rgba(59,130,246,0.5)]"></div>
+                                                <span className="text-[10px] font-bold text-blue-400 w-12 text-right">
+                                                    {(loc.currentWeight ?? 0).toFixed(1)}
+                                                </span>
+                                                <div className="w-16 h-1.5 bg-corp-base rounded-full overflow-hidden border border-corp-secondary/30">
+                                                    <div
+                                                        className="h-full bg-blue-500/70 shadow-[0_0_8px_rgba(59,130,246,0.5)] transition-all duration-300"
+                                                        style={{ width: `${Math.min(((loc.currentWeight ?? 0) / (loc.maxWeight || 1)) * 100, 100)}%` }}
+                                                    ></div>
                                                 </div>
                                                 <span className="text-[10px] font-bold text-slate-500">{loc.maxWeight}kg</span>
                                             </div>
                                             <div className="flex items-center gap-2">
-                                                <div className="w-12 h-1 bg-corp-base rounded-full overflow-hidden border border-corp-secondary/30">
-                                                    <div className="h-full bg-corp-accent w-1/2"></div>
+                                                <span className="text-[10px] font-bold text-cyan-400 w-12 text-right">
+                                                    {(loc.currentVolume ?? 0).toFixed(3)}
+                                                </span>
+                                                <div className="w-16 h-1.5 bg-corp-base rounded-full overflow-hidden border border-corp-secondary/30">
+                                                    <div
+                                                        className="h-full bg-corp-accent transition-all duration-300"
+                                                        style={{ width: `${Math.min(((loc.currentVolume ?? 0) / (loc.maxVolume || 1)) * 100, 100)}%` }}
+                                                    ></div>
                                                 </div>
                                                 <span className="text-[10px] font-bold text-slate-500">{loc.maxVolume}m³</span>
                                             </div>

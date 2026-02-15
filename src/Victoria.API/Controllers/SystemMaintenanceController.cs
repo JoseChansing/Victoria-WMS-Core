@@ -163,5 +163,44 @@ namespace Victoria.API.Controllers
                 return StatusCode(500, new { Error = ex.Message, Detail = ex.ToString() });
             }
         }
+
+        [HttpDelete("purge-tasks")]
+        public async Task<IActionResult> PurgeTasks()
+        {
+            _logger.LogWarning("⚠️ [SYSTEM] INICIANDO PURGA DE TAREAS DE INVENTARIO...");
+            try
+            {
+                // 1. Load all LPNs that are currently locked to a task
+                var lockedLpns = await _session.Query<Lpn>()
+                    .Where(x => x.CurrentTaskId != null)
+                    .ToListAsync();
+
+                foreach (var lpn in lockedLpns)
+                {
+                    _logger.LogInformation("[SYSTEM] Liberando LPN {LpnId} de la tarea {TaskId}", lpn.Id, lpn.CurrentTaskId);
+                    lpn.ReleaseFromTask();
+                    _session.Store(lpn);
+                }
+
+                // 2. Delete all InventoryTask documents
+                // We use a raw SQL approach for performance and simplicity since we want to wipe everything
+                var connectionString = _configuration.GetConnectionString("Marten");
+                using var conn = new NpgsqlConnection(connectionString);
+                await conn.OpenAsync();
+
+                using var cmd = new NpgsqlCommand("DELETE FROM mt_doc_inventorytask;", conn);
+                await cmd.ExecuteNonQueryAsync();
+
+                await _session.SaveChangesAsync();
+
+                _logger.LogInformation("[SYSTEM] Purga de tareas completada.");
+                return Ok(new { Message = "Todas las tareas han sido eliminadas y los LPNs liberados." });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[SYSTEM] Error durante purga de tareas.");
+                return StatusCode(500, new { Error = ex.Message });
+            }
+        }
     }
 }

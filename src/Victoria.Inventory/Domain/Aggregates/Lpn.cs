@@ -23,6 +23,7 @@ namespace Victoria.Inventory.Domain.Aggregates
         [JsonProperty] public int AllocatedQuantity { get; private set; } // For partial reservations
         [JsonProperty] public PhysicalAttributes PhysicalAttributes { get; private set; } = PhysicalAttributes.Empty();
         [JsonProperty] public LpnStatus Status { get; private set; }
+        [JsonProperty] public Guid? CurrentTaskId { get; private set; }
         [JsonProperty] public string? CurrentLocationId { get; private set; }
         [JsonProperty] public string? SelectedOrderId { get; private set; }
         [JsonProperty] public string? TargetOutboundOrder { get; private set; }
@@ -88,8 +89,8 @@ namespace Victoria.Inventory.Domain.Aggregates
 
         public void Allocate(string orderId, Sku sku, string userId, string stationId)
         {
-            if (Status != LpnStatus.Active && Status != LpnStatus.Putaway)
-                throw new InvalidOperationException($"Only Active LPNs can be allocated. Current status: {Status}");
+            if (Status != LpnStatus.Available && Status != LpnStatus.Putaway)
+                throw new InvalidOperationException($"Only Available LPNs can be allocated. Current status: {Status}");
 
             if (Sku != sku)
                 throw new ArgumentException($"SKU mismatch. Expected: {Sku}, Requested: {sku}");
@@ -204,6 +205,33 @@ namespace Victoria.Inventory.Domain.Aggregates
             _changes.Add(@event);
         }
 
+        public bool CanBeCounted() => Status != LpnStatus.Allocated && AllocatedQuantity == 0 && CurrentTaskId == null;
+
+        public void LockToTask(Guid taskId)
+        {
+            if (!CanBeCounted()) throw new InvalidOperationException("LPN is already locked or allocated.");
+            CurrentTaskId = taskId;
+            Status = LpnStatus.Counting;
+        }
+
+        public void ReleaseFromTask()
+        {
+            CurrentTaskId = null;
+            if (Status == LpnStatus.Counting)
+            {
+                Status = LpnStatus.Available;
+            }
+        }
+
+        public void UnlockFromTask()
+        {
+            CurrentTaskId = null;
+            if (Status == LpnStatus.Counting)
+            {
+                Status = LpnStatus.Available;
+            }
+        }
+
         public void Apply(LpnCreated e)
         {
             Id = e.LpnId;
@@ -237,7 +265,7 @@ namespace Victoria.Inventory.Domain.Aggregates
 
         public void Apply(PutawayCompleted e)
         {
-            Status = LpnStatus.Active;
+            Status = LpnStatus.Available;
         }
 
         public void Apply(LpnAllocated e)
@@ -296,14 +324,14 @@ namespace Victoria.Inventory.Domain.Aggregates
         Created,
         Received,
         Putaway,
+        Available,
         Allocated,
         Picked,
         Dispatched,
         Shipped,
         Quarantine,
-        Blocked,
+        Counting,
         Consumed,
-        Active,
         Voided
     }
 }

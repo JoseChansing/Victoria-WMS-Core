@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './Layout/NotificationBell';
+import { Toaster } from 'sonner';
 
 interface SidebarItemProps {
     icon: React.ReactNode;
@@ -43,7 +44,7 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const location = useLocation();
 
     const menuItems = [
-        { icon: <LayoutDashboard className="w-5 h-5" />, label: 'Dashboard', path: '/inventory' },
+        { icon: <LayoutDashboard className="w-5 h-5" />, label: 'Tareas de Inventario', path: '/inventory' },
         { icon: <Truck className="w-5 h-5 text-blue-400" />, label: '📡 Inbound RFID', path: '/inbound?mode=rfid' },
         { icon: <Truck className="w-5 h-5 text-emerald-400" />, label: '🖨️ Inbound Standard', path: '/inbound?mode=standard' },
         { icon: <Package className="w-5 h-5" />, label: 'LPN Master', path: '/inventory-master' },
@@ -131,6 +132,7 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                     {children}
                 </div>
             </main>
+            <Toaster position="top-right" theme="dark" richColors />
         </div>
     );
 };

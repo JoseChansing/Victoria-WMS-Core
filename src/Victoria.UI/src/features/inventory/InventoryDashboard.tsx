@@ -1,267 +1,330 @@
-import { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+
 import {
-    Package,
-    Search,
-    Activity,
-    RotateCcw,
-    ChevronRight,
-    Printer,
-    History,
-    Layout,
-} from 'lucide-react';
-import api from '../../api/axiosConfig';
-import { LpnHistoryModal } from './components/LpnHistoryModal';
+    inventoryService,
+    type InventoryTask,
+    TaskPriority,
+    TaskStatus,
+    TaskType,
+    LineStatus,
+    type CreateTaskDto
+} from '../../services/inventory';
+import { InventoryMetrics } from '../../components/Inventory/InventoryMetrics';
+import { CreateTaskModal } from '../../components/Inventory/CreateTaskModal';
+import { AdjustmentApprovalModal } from '../../components/Inventory/AdjustmentApprovalModal';
+import { TaskDetailModal } from './components/TaskDetailModal';
+import { toast } from 'sonner';
 
-interface InventoryItem {
-    id: string;
-    code: { value: string };
-    sku: { value: string };
-    type: number;
-    quantity: number;
-    allocatedQuantity: number;
-    currentLocationId: string;
-    status: number;
-    createdAt: string;
-}
+export const InventoryDashboard: React.FC = () => {
+    const [tasks, setTasks] = useState<InventoryTask[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+    const [selectedTaskForApproval, setSelectedTaskForApproval] = useState<InventoryTask | null>(null);
+    const [selectedTaskForDetails, setSelectedTaskForDetails] = useState<InventoryTask | null>(null);
 
-const LPN_TYPES: Record<number, string> = {
-    0: 'Loose',
-    1: 'Pack',
-    2: 'Pallet'
-};
-
-const LPN_STATUS: Record<number, string> = {
-    0: 'Created',
-    1: 'Received',
-    2: 'Stowed',
-    3: 'Allocated',
-    4: 'Picked',
-    5: 'Packed',
-    6: 'Dispatched'
-};
-
-export const InventoryDashboard = () => {
-    const [inventory, setInventory] = useState<InventoryItem[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [search, setSearch] = useState('');
-    const [selectedLpnId, setSelectedLpnId] = useState<string | null>(null);
-
-    const handlePrintLabel = (lpnId: string) => {
-        const url = `${api.defaults.baseURL}/printing/lpn/${lpnId}/label`;
-        window.open(url, '_blank', 'width=400,height=600');
-    };
-
-    const fetchData = async () => {
-        setLoading(true);
+    const fetchTasks = async () => {
         try {
-            const { data } = await api.get('/inventory/lpns');
-            setInventory(data);
-        } catch (error) {
-            console.error('Error fetching inventory:', error);
+            const data = await inventoryService.getTasks();
+            setTasks(data);
+            setError(null);
+        } catch (err) {
+            console.error(err);
+            setError("Error al cargar tareas de inventario.");
         } finally {
-            setLoading(false);
+            setIsLoading(false);
         }
     };
 
     useEffect(() => {
-        fetchData();
+        fetchTasks();
+        const interval = setInterval(fetchTasks, 15000); // Poll every 15s
+        return () => clearInterval(interval);
     }, []);
 
-    const filteredInventory = inventory.filter(item => {
-        const matchesSearch =
-            item.sku.value.toLowerCase().includes(search.toLowerCase()) ||
-            item.id.toLowerCase().includes(search.toLowerCase()) ||
-            item.code.value.toLowerCase().includes(search.toLowerCase());
+    const handleCreateTask = async (data: CreateTaskDto) => {
+        await inventoryService.createTask(data);
+        fetchTasks();
+    };
 
-        return matchesSearch;
-    });
+    const handleApprove = async (taskId: string) => {
+        await inventoryService.approveAdjustment(taskId);
+        fetchTasks();
+    };
 
-    const getStatusColor = (status: number) => {
+    const handleReject = async (taskId: string, reason: string) => {
+        await inventoryService.rejectAdjustment(taskId, reason);
+        fetchTasks();
+    };
+
+    const handleUpdatePriority = async (taskId: string, priority: TaskPriority) => {
+        try {
+            await inventoryService.updateTaskPriority(taskId, priority);
+            toast.success("Prioridad actualizada");
+
+            // Optimistic update for the modal
+            if (selectedTaskForDetails && selectedTaskForDetails.id === taskId) {
+                setSelectedTaskForDetails({ ...selectedTaskForDetails, priority });
+            }
+            fetchTasks();
+        } catch (error) {
+            toast.error("Error al actualizar prioridad");
+        }
+    };
+
+    const handleAssignTask = async (taskId: string, userId: string) => {
+        try {
+            await inventoryService.assignTask(taskId, userId);
+            toast.success(`Tarea asignada a ${userId}`);
+
+            // Optimistic update for the modal
+            if (selectedTaskForDetails && selectedTaskForDetails.id === taskId) {
+                setSelectedTaskForDetails({
+                    ...selectedTaskForDetails,
+                    assignedUserId: userId,
+                    status: TaskStatus.Assigned
+                });
+            }
+            fetchTasks();
+        } catch (error) {
+            toast.error("Error al asignar tarea");
+        }
+    };
+
+    const handleCancelTask = async (taskId: string) => {
+        try {
+            await inventoryService.cancelTask(taskId, "Cancelled by supervisor");
+            toast.success("Tarea cancelada");
+            fetchTasks();
+        } catch (error) {
+            toast.error("Error al cancelar tarea");
+        }
+    };
+
+    const handleRemoveLine = async (taskId: string, lineId: string, reason?: string) => {
+        try {
+            await inventoryService.removeTaskLine(taskId, lineId, reason);
+            toast.success("Línea removida. LPN liberado.");
+            fetchTasks();
+
+            // Optimistic update for modal
+            if (selectedTaskForDetails && selectedTaskForDetails.id === taskId) {
+                const updatedLines = selectedTaskForDetails.lines.filter(l => l.id !== lineId);
+                if (updatedLines.length === 0) {
+                    setSelectedTaskForDetails(null); // Task auto-cancelled
+                } else {
+                    setSelectedTaskForDetails({ ...selectedTaskForDetails, lines: updatedLines });
+                }
+            }
+        } catch (error) {
+            toast.error("Error al remover línea");
+        }
+    };
+
+    const handleReportLineCount = async (taskId: string, lineId: string, count: number) => {
+        try {
+            await inventoryService.reportLineCount(taskId, lineId, count);
+            toast.success("Count reported");
+
+            // Refresh local state for the modal if open
+            if (selectedTaskForDetails && selectedTaskForDetails.id === taskId) {
+                const refreshedTask = await inventoryService.getTasks().then(tasks => tasks.find(t => t.id === taskId));
+                if (refreshedTask) setSelectedTaskForDetails(refreshedTask);
+            }
+            fetchTasks();
+        } catch (error) {
+            toast.error("Error reporting count");
+        }
+    };
+
+    const getStatusBadge = (status: TaskStatus) => {
         switch (status) {
-            case 2: return 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'; // Ubicado (Available)
-            case 3: return 'bg-blue-500/10 text-blue-500 border-blue-500/20'; // Asignado (Reserved)
-            case 4: return 'bg-amber-500/10 text-amber-500 border-amber-500/20'; // Picked
-            default: return 'bg-slate-500/10 text-slate-500 border-slate-500/20';
+            case TaskStatus.Pending: return <span className="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-600">Pending</span>;
+            case TaskStatus.Assigned: return <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-600">Assigned</span>;
+            case TaskStatus.InProgress: return <span className="px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-600">In Progress</span>;
+            case TaskStatus.PendingApproval: return <span className="px-2 py-1 text-xs font-semibold rounded-full bg-orange-100 text-orange-600 animate-pulse">Approval Required</span>;
+            case TaskStatus.Completed: return <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-600">Completed</span>;
+            case TaskStatus.Cancelled: return <span className="px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-600">Cancelled</span>;
+            default: return null;
+        }
+    };
+
+    const getTypeIcon = (type: TaskType) => {
+        switch (type) {
+            case TaskType.CycleCount: return "🔄";
+            case TaskType.Putaway: return "📥";
+            case TaskType.Replenishment: return "📦";
+            default: return "📋";
+        }
+    };
+
+    const getPriorityBadge = (priority: TaskPriority) => {
+        switch (priority) {
+            case TaskPriority.Critical: return <span className="text-red-600 font-bold text-xs uppercase bg-red-50 px-2 py-0.5 rounded border border-red-100">Critical</span>;
+            case TaskPriority.High: return <span className="text-orange-600 font-bold text-xs uppercase">High</span>;
+            case TaskPriority.Low: return <span className="text-gray-400 text-xs uppercase">Low</span>;
+            default: return <span className="text-blue-600 text-xs uppercase">Normal</span>;
         }
     };
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-500">
-            {/* ... stats and layout code ... */}
-            {/* Header omitted for brevity in targetContent but included in replacement to match file start */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex flex-col h-[calc(100vh-160px)] animate-in fade-in duration-500">
+            <div className="shrink-0 flex justify-between items-center mb-8">
                 <div>
-                    <h2 className="text-2xl font-black text-white tracking-tight flex items-center gap-2">
-                        <Package className="text-corp-accent w-8 h-8" />
-                        LPN Viewer (Master)
-                    </h2>
-                    <p className="text-slate-400 font-medium">Unit control by container and master container</p>
-                </div>
-                <div className="flex items-center gap-3">
-                    <button
-                        onClick={fetchData}
-                        className="p-2.5 bg-corp-nav/40 border border-corp-secondary text-slate-300 rounded-xl hover:bg-corp-accent/40 hover:text-white transition-all shadow-sm"
-                    >
-                        <RotateCcw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
-                    </button>
-                    <div className="h-8 w-[1px] bg-corp-secondary" />
-                    <div className="bg-corp-accent/10 px-4 py-2 rounded-xl border border-corp-accent/20">
-                        <span className="text-xs font-bold text-corp-accent uppercase tracking-widest leading-none block mb-0.5">Total Units</span>
-                        <span className="text-lg font-black text-white leading-none">
-                            {inventory.reduce((acc, curr) => acc + curr.quantity, 0).toLocaleString()} <span className="text-xs font-medium text-slate-400">UNITS</span>
+                    <h1 className="text-3xl font-black text-white tracking-tight flex items-center gap-2">
+                        Inventory Supervisor Dashboard
+                        <span className="px-3 py-1 rounded-full bg-corp-accent/20 text-corp-accent text-xs font-bold uppercase tracking-widest border border-corp-accent/30">
+                            Inventory
                         </span>
-                    </div>
+                    </h1>
+                    <p className="text-slate-400 font-medium mt-1">Real-time task management and control</p>
                 </div>
+                <button
+                    onClick={() => setIsCreateModalOpen(true)}
+                    className="flex items-center gap-2 bg-corp-accent hover:bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg shadow-blue-900/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                    New Task
+                </button>
             </div>
 
-            {/* Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-corp-nav/40 p-5 rounded-3xl border border-corp-secondary shadow-xl shadow-black/10 flex items-center gap-4">
-                    <div className="p-3 bg-emerald-500/10 rounded-2xl border border-emerald-500/20">
-                        <Activity className="w-6 h-6 text-emerald-500" />
-                    </div>
-                    <div>
-                        <p className="text-xs font-black text-slate-500 uppercase tracking-wider">Stowed / Avail.</p>
-                        <p className="text-2xl font-black text-white">
-                            {inventory.filter(i => i.status === 2).length} <span className="text-xs text-slate-400">LPNs</span>
-                        </p>
-                    </div>
-                </div>
-                <div className="bg-corp-nav/40 p-5 rounded-3xl border border-corp-secondary shadow-xl shadow-black/10 flex items-center gap-4">
-                    <div className="p-3 bg-blue-500/10 rounded-2xl border border-blue-500/20">
-                        <Activity className="w-6 h-6 text-blue-500" />
-                    </div>
-                    <div>
-                        <p className="text-xs font-black text-slate-500 uppercase tracking-wider">Committed (Picking)</p>
-                        <p className="text-2xl font-black text-white">
-                            {inventory.filter(i => i.status === 3).length} <span className="text-xs text-slate-400">LPNs</span>
-                        </p>
-                    </div>
-                </div>
+            <div className="shrink-0 mb-6">
+                <InventoryMetrics tasks={tasks} />
             </div>
 
-            {/* Filters & Table */}
-            <div className="bg-corp-nav/40 rounded-3xl border border-corp-secondary shadow-xl overflow-hidden">
-                <div className="p-6 border-b border-corp-secondary/50 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-corp-base/30">
-                    <div className="relative flex-1 max-w-xl">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                        <input
-                            type="text"
-                            placeholder="Search by SKU, or LPN ID..."
-                            className="w-full pl-11 pr-4 py-3 bg-corp-base/50 border border-corp-secondary/50 rounded-2xl text-sm text-white focus:ring-2 focus:ring-corp-accent transition-all font-medium placeholder:text-slate-600"
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                        />
-                    </div>
+            {isLoading ? (
+                <div className="flex flex-col items-center justify-center py-20">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-corp-accent"></div>
+                    <p className="mt-4 text-slate-400 font-bold animate-pulse">Syncing tasks...</p>
                 </div>
-
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                        <thead>
-                            <tr className="bg-corp-accent/5 border-b border-corp-secondary/30">
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">LPN Info</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">SKU</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Quantity</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Location</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Status</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-corp-secondary/20">
-                            {loading ? (
-                                Array(5).fill(0).map((_, i) => (
-                                    <tr key={i} className="animate-pulse">
-                                        <td colSpan={6} className="px-6 py-8">
-                                            <div className="h-4 bg-slate-100/5 rounded-full w-full"></div>
+            ) : error ? (
+                <div className="bg-red-500/10 border border-red-500/20 p-6 rounded-2xl text-center">
+                    <p className="text-red-400 font-bold mb-2">Synchronization Error</p>
+                    <p className="text-sm text-red-300/80">{error}</p>
+                </div>
+            ) : (
+                <div className="bg-corp-nav/40 rounded-3xl border border-corp-secondary shadow-xl flex flex-col flex-1 overflow-hidden min-h-0">
+                    <div className="flex-1 overflow-auto no-scrollbar">
+                        <table className="w-full text-left border-collapse">
+                            <thead className="sticky top-0 z-10 bg-corp-base/90 backdrop-blur-md border-b border-corp-secondary/50">
+                                <tr>
+                                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Task</th>
+                                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Location / SKU</th>
+                                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Priority</th>
+                                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</th>
+                                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Progress</th>
+                                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-corp-secondary/20">
+                                {tasks.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={6} className="px-6 py-12 text-center">
+                                            <div className="flex flex-col items-center gap-3">
+                                                <div className="p-4 bg-corp-secondary/20 rounded-full">
+                                                    <svg className="w-8 h-8 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+                                                </div>
+                                                <p className="text-slate-500 font-bold">No active tasks</p>
+                                            </div>
                                         </td>
                                     </tr>
-                                ))
-                            ) : filteredInventory.length === 0 ? (
-                                <tr>
-                                    <td colSpan={6} className="px-6 py-20 text-center">
-                                        <div className="flex flex-col items-center gap-3">
-                                            <div className="p-4 bg-corp-secondary/20 rounded-full">
-                                                <Package className="w-8 h-8 text-slate-600" />
-                                            </div>
-                                            <p className="text-slate-500 font-bold">No LPNs found</p>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ) : filteredInventory.map(item => (
-                                <tr key={item.id} className="hover:bg-corp-accent/5 transition-colors group">
-                                    <td className="px-6 py-5">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 bg-corp-base rounded-xl border border-corp-secondary flex items-center justify-center group-hover:border-corp-accent/50 transition-colors shadow-sm">
-                                                <Layout className="w-5 h-5 text-slate-500 group-hover:text-corp-accent transition-colors" />
-                                            </div>
-                                            <div className="flex flex-col text-sm">
-                                                <button
-                                                    onClick={() => setSelectedLpnId(item.id)}
-                                                    className="text-left font-bold text-white hover:text-corp-accent transition-colors"
-                                                >
-                                                    {item.id}
-                                                </button>
-                                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{LPN_TYPES[item.type] || 'Unknown'}</span>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-5">
-                                        <div className="flex flex-col text-sm">
-                                            <span className="font-bold text-white group-hover:text-corp-accent transition-colors">{item.sku.value}</span>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-5 text-center">
-                                        <span className="px-3 py-1 bg-corp-base border border-corp-secondary rounded-lg font-black text-white text-sm">
-                                            {item.quantity}
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-5">
-                                        <div className="flex flex-col">
-                                            <div className="flex items-center gap-2">
-                                                <div className="w-2 h-2 rounded-full bg-corp-accent shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
-                                                <span className="font-bold text-sm text-white uppercase tracking-tight">{item.currentLocationId}</span>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-5 text-center">
-                                        <span className={`inline-flex items-center px-2.5 py-1 rounded-lg border text-[10px] font-black uppercase tracking-widest ${getStatusColor(item.status)}`}>
-                                            {LPN_STATUS[item.status] || 'Unknown'}
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-5 text-right">
-                                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                                            <button
-                                                onClick={() => handlePrintLabel(item.id)}
-                                                className="p-2 text-slate-500 hover:text-white hover:bg-corp-accent/40 rounded-lg transition-all border border-transparent hover:border-corp-secondary/50"
-                                                title="Print Label"
-                                            >
-                                                <Printer className="w-4 h-4" />
-                                            </button>
-                                            <button
-                                                onClick={() => setSelectedLpnId(item.id)}
-                                                className="p-2 text-slate-500 hover:text-white hover:bg-corp-accent/40 rounded-lg transition-all border border-transparent hover:border-corp-secondary/50"
-                                                title="View History"
-                                            >
-                                                <History className="w-4 h-4" />
-                                            </button>
-                                            <div className="w-4" />
-                                            <ChevronRight className="w-4 h-4 text-slate-600" />
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                                ) : (
+                                    tasks.map((task) => (
+                                        <tr
+                                            key={task.id}
+                                            onClick={() => setSelectedTaskForDetails(task)}
+                                            className="hover:bg-corp-accent/5 transition-colors group cursor-pointer"
+                                        >
+                                            <td className="px-6 py-5">
+                                                <div className="flex items-center gap-3">
+                                                    <span className="text-xl bg-corp-base w-10 h-10 flex items-center justify-center rounded-xl border border-corp-secondary/50 shadow-sm group-hover:border-corp-accent/50 transition-colors">
+                                                        {getTypeIcon(task.type as TaskType)}
+                                                    </span>
+                                                    <div>
+                                                        <p className="font-bold text-white group-hover:text-corp-accent transition-colors">{task.taskNumber}</p>
+                                                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                                            {task.createdAt && !isNaN(new Date(task.createdAt).getTime())
+                                                                ? new Date(task.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                                                : 'N/A'}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-5">
+                                                <div className="flex flex-col">
+                                                    <span className="font-bold text-white text-sm">
+                                                        {(task.lines?.length ?? 0)} {(task.lines?.length ?? 0) === 1 ? 'LPN' : 'LPNs'}
+                                                    </span>
+                                                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-tighter truncate max-w-[150px]">
+                                                        {task.lines?.[0]?.targetId ?? '---'}{task.lines?.length > 1 ? ', ...' : ''}
+                                                    </span>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-5">
+                                                {getPriorityBadge(task.priority as TaskPriority)}
+                                            </td>
+                                            <td className="px-6 py-5">
+                                                {getStatusBadge(task.status as TaskStatus)}
+                                            </td>
+                                            <td className="px-6 py-5">
+                                                <div className="space-y-1.5">
+                                                    <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-slate-500">
+                                                        <span>Progress</span>
+                                                        <span className="text-white">{task.lines?.filter(l => l.status !== LineStatus.Pending).length ?? 0} / {task.lines?.length ?? 0}</span>
+                                                    </div>
+                                                    <div className="w-full bg-corp-secondary/30 h-1.5 rounded-full overflow-hidden border border-corp-secondary/20">
+                                                        <div
+                                                            className={`h-full transition-all duration-1000 ${task.status === TaskStatus.PendingApproval ? 'bg-orange-500' : 'bg-corp-accent'}`}
+                                                            style={{ width: `${((task.lines?.filter(l => l.status !== LineStatus.Pending).length ?? 0) / (task.lines?.length || 1)) * 100}%` }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-5 text-right">
+                                                {task.status === TaskStatus.PendingApproval && (
+                                                    <button
+                                                        onClick={() => setSelectedTaskForApproval(task)}
+                                                        className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 font-bold px-4 py-2 rounded-lg text-xs border border-amber-500/20 hover:border-amber-500/40 transition-all uppercase tracking-wider"
+                                                    >
+                                                        ⚖️ Resolve
+                                                    </button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-            </div>
-
-            {/* History Modal */}
-            {selectedLpnId && (
-                <LpnHistoryModal
-                    lpnId={selectedLpnId}
-                    onClose={() => setSelectedLpnId(null)}
-                />
             )}
+
+            <CreateTaskModal
+                isOpen={isCreateModalOpen}
+                onClose={() => setIsCreateModalOpen(false)}
+                onSubmit={handleCreateTask}
+            />
+
+            <AdjustmentApprovalModal
+                isOpen={!!selectedTaskForApproval}
+                task={selectedTaskForApproval}
+                onClose={() => setSelectedTaskForApproval(null)}
+                onApprove={handleApprove}
+                onReject={handleReject}
+            />
+
+            <TaskDetailModal
+                isOpen={!!selectedTaskForDetails}
+                task={selectedTaskForDetails}
+                onClose={() => setSelectedTaskForDetails(null)}
+                onUpdatePriority={handleUpdatePriority}
+                onAssignTask={handleAssignTask}
+                onCancelTask={handleCancelTask}
+                onReportLineCount={handleReportLineCount}
+                onApproveAdjustments={handleApprove}
+                onRejectAdjustments={handleReject}
+                onRemoveLine={handleRemoveLine}
+            />
         </div>
     );
 };

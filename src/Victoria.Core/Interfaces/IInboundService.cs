@@ -7,6 +7,7 @@ namespace Victoria.Core.Interfaces
     {
         Task<int> SyncAllAsync(IOdooRpcClient odooClient);
         Task SyncPicking(OdooOrderDto odooPicking, string type);
+        Task<bool> SyncSingleOrderAsync(IOdooRpcClient odooClient, string orderNumber);
         Task<int> PerformCleanupGuardian(IOdooRpcClient odooClient);
     }
 }

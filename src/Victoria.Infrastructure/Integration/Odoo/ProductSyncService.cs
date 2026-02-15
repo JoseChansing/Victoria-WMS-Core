@@ -23,21 +23,28 @@ namespace Victoria.Infrastructure.Integration.Odoo
             _logger = logger;
         }
 
-        public async Task<int> SyncAllAsync(IOdooRpcClient odooClient)
+        public async Task<int> SyncAllAsync(IOdooRpcClient odooClient, bool forceFull = false)
         {
             // 1. Get Sync State
             var syncState = await _session.LoadAsync<SyncState>("ProductSync") ?? new SyncState { Id = "ProductSync", EntityType = "Product" };
             var domainList = new List<object[]> {
-                new object[] { "active", "=", true },
-                new object[] { "categ_id.name", "in", new string[] { 
+                new object[] { "active", "=", true }
+            };
+
+            // CATEGORY FILTER (Only for Incremental Sync or if NOT forceFull)
+            // If forceFull is true, we want EVERYTHING.
+            if (!forceFull)
+            {
+                domainList.Add(new object[] { "categ_id.name", "in", new string[] { 
                     "AMORTIGUADORES", "ANILLOS DE PISTON", "ELECTROVENTILADORES", 
                     "SOPORTES DE MOTOR", "MULETAS", "RADIADORES", "CONDENSADORES",
                     "PUNTAS DE FLECHA", "BASES DE AMORTIGUADOR"
-                } }
-            };
+                } });
+            }
 
             // INCREMENTAL SYNC LOGIC
-            if (syncState.LastSyncTimestamp != DateTime.MinValue)
+            // Should be skipped if forceFull is true
+            if (!forceFull && syncState.LastSyncTimestamp != DateTime.MinValue)
             {
                 // Safety margin: 15 minutes overlap to avoid clock skew issues
                 var safeTimestamp = syncState.LastSyncTimestamp.AddMinutes(-15);
@@ -48,7 +55,14 @@ namespace Victoria.Infrastructure.Integration.Odoo
             }
             else
             {
-                _logger.LogInformation("[FULL-SYNC] No previous sync timestamp found. Executing full load.");
+                if (forceFull)
+                {
+                     _logger.LogWarning("[FULL-SYNC] Iniciando carga masiva de productos. Esto tomará tiempo.");
+                }
+                else
+                {
+                    _logger.LogInformation("[FULL-SYNC] No previous sync timestamp found. Executing full load.");
+                }
             }
 
             var domain = domainList.ToArray();
@@ -207,6 +221,16 @@ namespace Victoria.Infrastructure.Integration.Odoo
                 // Save changes for this batch to avoid keeping 20k objects in memory
                 await _session.SaveChangesAsync();
                 _logger.LogInformation($"[MASSIVE-SYNC] Batch completed. Total so far: {totalProcessed}");
+
+                // PERIODIC STATE SAVE (Every 5 batches)
+                // This ensures that if we timeout later, we have committed a progress timestamp.
+                if ((offset / batchSize) % 5 == 0)
+                {
+                    syncState.LastSyncTimestamp = DateTime.UtcNow.AddMinutes(-15); // Safety overlap
+                    _session.Store(syncState);
+                    await _session.SaveChangesAsync();
+                    _logger.LogInformation($"[MASSIVE-SYNC] Committed intermediate SyncState at offset {offset}");
+                }
 
                 offset += batchSize;
                 if (odooProducts.Count < batchSize) hasMore = false;

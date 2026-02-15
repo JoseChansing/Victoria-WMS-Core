@@ -31,14 +31,44 @@ namespace Victoria.API.Controllers
                 .Where(x => x.CurrentLocationId != null)
                 .ToListAsync();
 
+            // Load all products for weight/volume calculation
+            var skus = lpnsInLocations.Select(x => x.Sku.Value).Distinct().ToList();
+            var products = await _session.Query<Product>()
+                .Where(x => skus.Contains(x.Sku))
+                .ToListAsync();
+            var productMap = products.ToDictionary(p => p.Sku);
+
             var activeLpnMap = lpnsInLocations
-                .Where(x => x.Status == LpnStatus.Active)
+                .Where(x => x.Status == LpnStatus.Available)
                 .GroupBy(x => x.CurrentLocationId)
                 .ToDictionary(g => g.Key!, g => g.Count());
 
             var unitCountMap = lpnsInLocations
                 .GroupBy(x => x.CurrentLocationId)
                 .ToDictionary(g => g.Key!, g => g.Sum(x => x.Quantity));
+
+            // Calculate total weight and volume per location
+            var weightMap = lpnsInLocations
+                .GroupBy(x => x.CurrentLocationId)
+                .ToDictionary(
+                    g => g.Key!,
+                    g => g.Sum(lpn => {
+                        if (productMap.TryGetValue(lpn.Sku.Value, out var product))
+                            return (double)(product.UnitWeight * lpn.Quantity);
+                        return 0.0;
+                    })
+                );
+
+            var volumeMap = lpnsInLocations
+                .GroupBy(x => x.CurrentLocationId)
+                .ToDictionary(
+                    g => g.Key!,
+                    g => g.Sum(lpn => {
+                        if (productMap.TryGetValue(lpn.Sku.Value, out var product))
+                            return (double)(product.UnitVolume * lpn.Quantity);
+                        return 0.0;
+                    })
+                );
 
             var result = locations.Select(l => {
                 var codeVal = (l.Code != null && !string.IsNullOrEmpty(l.Code.Value)) ? l.Code.Value : l.Id;
@@ -58,6 +88,9 @@ namespace Victoria.API.Controllers
                     displayCount = (codeVal != null && activeLpnMap.TryGetValue(codeVal, out var c)) ? c : 0;
                 }
 
+                var currentWeight = (codeVal != null && weightMap.TryGetValue(codeVal, out var w)) ? w : 0.0;
+                var currentVolume = (codeVal != null && volumeMap.TryGetValue(codeVal, out var v)) ? v : 0.0;
+
                 return new
                 {
                     value = codeVal,
@@ -68,6 +101,8 @@ namespace Victoria.API.Controllers
                     pickingSequence = l.PickingSequence,
                     maxWeight = l.MaxWeight,
                     maxVolume = l.MaxVolume,
+                    currentWeight = Math.Round(currentWeight, 2),
+                    currentVolume = Math.Round(currentVolume, 5),
                     barcode = string.IsNullOrEmpty(l.Barcode) ? codeVal : l.Barcode,
                     occupancyStatus = GetOccupancyStatus(l, displayCount),
                     lpnCount = displayCount
@@ -174,6 +209,51 @@ namespace Victoria.API.Controllers
 
             return Ok(loc);
         }
+
+        [HttpPut("{code}/profile")]
+        public async Task<IActionResult> UpdateLocationProfile(string code, [FromBody] ProfileUpdateDto dto)
+        {
+            var loc = await _session.Query<Location>().Where(x => x.Code.Value == code).FirstOrDefaultAsync();
+            if (loc == null) return NotFound();
+
+            // Update profile and isPickable directly
+            loc.Profile = Enum.Parse<LocationProfile>(dto.Profile);
+            loc.IsPickable = dto.IsPickable;
+            
+            _session.Store(loc);
+            await _session.SaveChangesAsync();
+
+            return Ok(new { Message = $"Profile updated to {dto.Profile}" });
+        }
+
+        [HttpPost("create-masters")]
+        public async Task<IActionResult> CreateMasterLocations()
+        {
+            var masterCodes = new[] { "DOCK-LPN", "STAGE-RESERVE", "STAGE-PICKING", "PHOTO-STATION" };
+            var created = 0;
+
+            foreach (var code in masterCodes)
+            {
+                var existing = await _session.Query<Location>()
+                    .FirstOrDefaultAsync(x => x.Code.Value == code);
+
+                if (existing == null)
+                {
+                    var location = Location.Create(
+                        LocationCode.Create(code),
+                        LocationProfile.Reserve,
+                        false
+                    );
+                    location.UpdateMetadata(0, 10000.0, 100.0, code, "SETUP", "API");
+                    _session.Store(location);
+                    created++;
+                    _logger.LogInformation("Created master location: {Code}", code);
+                }
+            }
+
+            await _session.SaveChangesAsync();
+            return Ok(new { Message = $"Created {created} master locations" });
+        }
     }
 
     public class LocationImportDto
@@ -193,5 +273,11 @@ namespace Victoria.API.Controllers
         public double MaxWeight { get; set; }
         public double MaxVolume { get; set; }
         public string Barcode { get; set; } = string.Empty;
+    }
+
+    public class ProfileUpdateDto
+    {
+        public string Profile { get; set; } = "Reserve";
+        public bool IsPickable { get; set; }
     }
 }

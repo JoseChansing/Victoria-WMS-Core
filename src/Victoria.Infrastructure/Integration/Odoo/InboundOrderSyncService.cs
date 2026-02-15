@@ -45,7 +45,7 @@ namespace Victoria.Infrastructure.Integration.Odoo
 
             var domain = domainList.ToArray();
 
-            var fields = new string[] { "name", "picking_type_code", "id", "write_date" };
+            var fields = new string[] { "name", "picking_type_code", "id", "write_date", "partner_id" };
             var pickings = await odooClient.SearchAndReadAsync<OdooOrderDto>("stock.picking", domain, fields);
             
             if (pickings == null || pickings.Count == 0)
@@ -78,6 +78,75 @@ namespace Victoria.Infrastructure.Integration.Odoo
             await _session.SaveChangesAsync();
 
             return processed;
+        }
+
+        public async Task<bool> SyncSingleOrderAsync(IOdooRpcClient odooClient, string orderNumber)
+        {
+            _logger.LogInformation("[SINGLE-SYNC] Searching for specific order {Ref} in Odoo...", orderNumber);
+
+            var domain = new object[][] { 
+                new object[] { "name", "=", orderNumber }
+            };
+            var fields = new string[] { "name", "picking_type_code", "id", "write_date", "partner_id" };
+
+            var pickings = await odooClient.SearchAndReadAsync<OdooOrderDto>("stock.picking", domain, fields);
+
+            if (pickings == null || pickings.Count == 0)
+            {
+                _logger.LogWarning("[SINGLE-SYNC] Order {Ref} NOT FOUND in Odoo.", orderNumber);
+                return false;
+            }
+
+            var pick = pickings[0];
+            _logger.LogInformation("[SINGLE-SYNC] Found order {Ref} (ID: {Id}). Fetching lines...", orderNumber, pick.Id);
+
+            var moveDomain = new object[][] { new object[] { "picking_id", "=", pick.Id } };
+            var moveFields = new string[] { "id", "product_id", "product_uom_qty" };
+
+            try 
+            {
+                var moves = await odooClient.SearchAndReadAsync<OdooOrderLineDto>("stock.move", moveDomain, moveFields);
+                pick.Lines = moves;
+                await SyncPicking(pick, "INCOMING");
+                await _session.SaveChangesAsync();
+                _logger.LogInformation("[SINGLE-SYNC] Order {Ref} injected successfully.", orderNumber);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[SINGLE-SYNC] Error injecting order {Ref}", orderNumber);
+                return false;
+            }
+        }
+
+        private string ExtractPartnerName(object? partnerData)
+        {
+            if (partnerData == null) return "Odoo Hub";
+            
+            try 
+            {
+                if (partnerData is System.Text.Json.JsonElement elem)
+                {
+                    // Odoo returns [id, "Name"]
+                    if (elem.ValueKind == System.Text.Json.JsonValueKind.Array && elem.GetArrayLength() > 1)
+                        return elem[1].GetString() ?? "Unknown";
+                    
+                    if (elem.ValueKind == System.Text.Json.JsonValueKind.String)
+                        return elem.GetString() ?? "Unknown";
+                }
+                
+                if (partnerData is System.Collections.IList list && list.Count > 1)
+                {
+                    return list[1]?.ToString() ?? "Unknown";
+                }
+                
+                // Fallback for direct string or other types
+                return partnerData.ToString() ?? "Unknown";
+            }
+            catch
+            {
+                return "Unknown Supplier";
+            }
         }
 
         private long ExtractProductId(object? productIdData)
@@ -184,16 +253,19 @@ namespace Victoria.Infrastructure.Integration.Odoo
             {
                 Id = odooPicking.Id.ToString(),
                 OrderNumber = odooPicking.Name,
-                Supplier = "Odoo Supplier",
+                Supplier = ExtractPartnerName(odooPicking.Partner_Id),
                 // Preserve status if exists, otherwise Pending
                 Status = existingOrder?.Status ?? "Pending", 
+                // Preserve existing date or use current server time for new orders
+                Date = existingOrder?.Date ?? DateTime.Now.ToString("O"),
                 Lines = lines,
                 TotalUnits = lines.Sum(l => l.ExpectedQty),
                 IsCrossdock = existingOrder?.IsCrossdock ?? false,
                 TargetOutboundOrder = existingOrder?.TargetOutboundOrder,
-                Date = DateTime.UtcNow.ToString("yyyy-MM-dd")
+                ProcessedDate = existingOrder?.ProcessedDate,
+                DateClosed = existingOrder?.DateClosed
             };
-
+            
             _session.Store(order);
             await _session.SaveChangesAsync();
         }
@@ -224,6 +296,7 @@ namespace Victoria.Infrastructure.Integration.Odoo
                 if (odooExists == null || odooExists.Count == 0)
                 {
                     // CASE 1: Order Deleted in Odoo
+                    _logger.LogWarning($"[GUARDIAN] Order {localOrder.OrderNumber} NOT FOUND in Odoo. Processing as deleted.");
                     actionCount += await HandleMissingOrCancelledOrder(localOrder, "deleted");
                 }
                 else
@@ -232,7 +305,18 @@ namespace Victoria.Infrastructure.Integration.Odoo
                     var odooOrder = odooExists[0];
                     if (odooOrder.State == "cancel")
                     {
+                        _logger.LogInformation($"[GUARDIAN] Order {localOrder.OrderNumber} found in Odoo with state 'cancel'. Processing as cancelled.");
+                        
+                        // Set DateClosed when cancelling via Guardian
+                        localOrder.DateClosed = DateTime.Now;
+                        _session.Store(localOrder); // Ensure this update is tracked before handling status
+                        
                         actionCount += await HandleMissingOrCancelledOrder(localOrder, "cancelled");
+                    }
+                    else
+                    {
+                        // Log healthy state for debugging
+                        _logger.LogDebug($"[GUARDIAN] Order {localOrder.OrderNumber} is healthy in Odoo (State: {odooOrder.State}).");
                     }
                 }
             }
@@ -249,8 +333,17 @@ namespace Victoria.Infrastructure.Integration.Odoo
 
             if (!hasWorkDone)
             {
-                _logger.LogWarning($"[GUARDIAN] Order {localOrder.OrderNumber} matches '{reason}' criteria and has NO work. Auto-Cancelling local copy.");
-                _session.Delete(localOrder);
+                if (reason == "cancelled")
+                {
+                    _logger.LogInformation($"[GUARDIAN] Order {localOrder.OrderNumber} is cancelled in Odoo. Updating local status to Cancelled.");
+                    localOrder.Status = "Cancelled";
+                    _session.Store(localOrder);
+                }
+                else
+                {
+                    _logger.LogWarning($"[GUARDIAN] Order {localOrder.OrderNumber} matches '{reason}' criteria and has NO work. Auto-Deleting local copy.");
+                    _session.Delete(localOrder);
+                }
                 actionsPerformed++;
             }
             else

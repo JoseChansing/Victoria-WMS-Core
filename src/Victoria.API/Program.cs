@@ -45,6 +45,7 @@ builder.Services.AddMarten(opts =>
     opts.RegisterDocumentType<Victoria.Inventory.Domain.Aggregates.InboundOrder>();
     opts.RegisterDocumentType<Victoria.Inventory.Domain.Aggregates.Lpn>();
     opts.RegisterDocumentType<Victoria.Inventory.Domain.Entities.Task>();
+    opts.RegisterDocumentType<Victoria.Core.Inventory.InventoryTask>();
     
     // Projections (Phase 3)
     opts.Projections.Add<InventoryByItemProjection>(Marten.Events.Projections.ProjectionLifecycle.Inline);
@@ -94,7 +95,8 @@ builder.Services.AddScoped<Victoria.Core.Interfaces.IProductService, Victoria.In
 builder.Services.AddScoped<Victoria.Core.Interfaces.IInboundService, Victoria.Infrastructure.Integration.Odoo.InboundOrderSyncService>();
 builder.Services.AddScoped<Victoria.Infrastructure.Integration.Odoo.OdooFeedbackService>();
 builder.Services.AddScoped<Victoria.Infrastructure.Integration.Odoo.OdooFeedbackConsumer>();
-builder.Services.AddScoped<Victoria.Infrastructure.Integration.Odoo.IOdooAdapter, Victoria.Infrastructure.Integration.Odoo.OdooAdapter>();
+builder.Services.AddScoped<Victoria.Core.Interfaces.IOdooAdapter, Victoria.Infrastructure.Integration.Odoo.OdooAdapter>();
+builder.Services.AddScoped<Victoria.Infrastructure.Services.InventoryTaskService>();
 builder.Services.AddScoped<Victoria.Inventory.Application.Commands.ApproveReceiptOverageHandler>();
 
 // 6. RFID & Printing Services

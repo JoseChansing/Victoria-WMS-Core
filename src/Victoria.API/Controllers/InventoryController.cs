@@ -37,10 +37,35 @@ namespace Victoria.API.Controllers
         }
 
         [HttpGet("items")]
-        public async Task<ActionResult<IReadOnlyList<InventoryItemView>>> GetInventoryByItem()
+        public async Task<ActionResult> GetInventoryByItem()
         {
-            var items = await _session.Query<InventoryItemView>().ToListAsync();
-            return Ok(items);
+            var allLpns = await _session.Query<Lpn>().ToListAsync();
+
+            if (!allLpns.Any()) return Ok(new List<object>());
+
+            var skus = allLpns.Select(x => x.Sku.Value).Distinct().ToList();
+            var products = await _session.Query<Product>()
+                .Where(x => x.Sku.In(skus))
+                .ToListAsync();
+            
+            var productMap = products.GroupBy(p => p.Sku).ToDictionary(g => g.Key, g => g.First().Name);
+
+            var aggregatedItems = allLpns
+                .Where(x => x.Status != LpnStatus.Consumed && x.Status != LpnStatus.Voided)
+                .GroupBy(l => l.Sku.Value)
+                .Select(g => new
+                {
+                    id = g.Key,
+                    sku = g.Key,
+                    description = productMap.ContainsKey(g.Key) ? productMap[g.Key] : "Provisional",
+                    totalQuantity = g.Sum(l => l.Quantity),
+                    primaryLocation = g.OrderByDescending(l => l.Quantity).FirstOrDefault()?.CurrentLocationId ?? "N/A",
+                    lastUpdated = g.Max(l => l.CreatedAt) 
+                })
+                .OrderBy(x => x.sku)
+                .ToList();
+
+            return Ok(aggregatedItems);
         }
 
         [HttpGet("locations")]
@@ -84,8 +109,34 @@ namespace Victoria.API.Controllers
                     quantity = lpn.Quantity,
                     allocatedQuantity = lpn.AllocatedQuantity,
                     status = (int)lpn.Status,
-                    lpnType = lpn.Type.ToString()
+                    lpnType = lpn.Type.ToString(),
+                    currentTaskId = lpn.CurrentTaskId
                 })
+                .ToList();
+
+            return Ok(report);
+        }
+
+        [HttpGet("items/{sku}/lpns")]
+        public async Task<ActionResult> GetItemLpns(string sku)
+        {
+            var lpns = await _session.Query<Lpn>()
+                .Where(x => x.Sku.Value == sku && x.Status != LpnStatus.Consumed && x.Status != LpnStatus.Voided)
+                .ToListAsync();
+
+            var report = lpns
+                .Select(lpn => new
+                {
+                    lpnId = lpn.Id,
+                    locationId = lpn.CurrentLocationId ?? "N/A",
+                    locationType = (lpn.CurrentLocationId ?? "").StartsWith("STAG") ? "Storage" : "Picking",
+                    quantity = lpn.Quantity,
+                    allocatedQuantity = lpn.AllocatedQuantity,
+                    status = (int)lpn.Status,
+                    currentTaskId = lpn.CurrentTaskId,
+                    createdAt = lpn.CreatedAt
+                })
+                .OrderByDescending(x => x.createdAt)
                 .ToList();
 
             return Ok(report);

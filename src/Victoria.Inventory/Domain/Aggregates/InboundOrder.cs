@@ -15,6 +15,7 @@ namespace Victoria.Inventory.Domain.Aggregates
         public bool IsCrossdock { get; set; }
         public string? TargetOutboundOrder { get; set; }
         public string? ProcessedDate { get; set; }
+        public DateTime? DateClosed { get; set; }
         public List<InboundLine> Lines { get; set; } = new();
 
         public void RevertReception(string sku, int qty)

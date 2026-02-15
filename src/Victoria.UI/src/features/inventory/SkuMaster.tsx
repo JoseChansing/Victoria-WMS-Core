@@ -195,7 +195,7 @@ export const SkuMaster: React.FC = () => {
     };
 
     return (
-        <div className="space-y-4 animate-in fade-in duration-500 h-[calc(100vh-140px)] flex flex-col">
+        <div className="space-y-4 animate-in fade-in duration-500 h-[calc(100vh-160px)] flex flex-col">
             <div className="flex items-center justify-between shrink-0 px-2">
                 <div>
                     <h1 className="text-2xl font-black text-white tracking-tight">SKU Master</h1>
@@ -394,23 +394,23 @@ export const SkuMaster: React.FC = () => {
                     <table className="w-full text-left border-collapse">
                         <thead className="sticky top-0 z-20 bg-corp-base shadow-sm ring-1 ring-white/5">
                             <tr className="border-b border-corp-secondary/30">
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-corp-base">Item (SKU)</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-corp-base min-w-[140px]">Item (SKU)</th>
                                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-corp-base">Description</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-corp-base">Barcode</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-corp-base">Brand</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center bg-corp-base">Sides</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-corp-base">Category</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center bg-corp-base">Bultos</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center bg-corp-base">Unit Weight</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right bg-corp-base">Volume m3 (Unit)</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center bg-corp-base">Image</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-corp-base hidden xl:table-cell">Barcode</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-corp-base hidden md:table-cell">Brand</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center bg-corp-base hidden 2xl:table-cell">Sides</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-corp-base hidden sm:table-cell">Category</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center bg-corp-base hidden lg:table-cell">Bultos</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center bg-corp-base hidden lg:table-cell">Unit Weight</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right bg-corp-base hidden xl:table-cell">Volume m3</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center bg-corp-base hidden sm:table-cell">Image</th>
                                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right bg-corp-base">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-corp-secondary/20">
                             {products.length === 0 ? (
                                 <tr>
-                                    <td colSpan={10} className="px-6 py-12 text-center text-slate-500 italic text-sm">
+                                    <td colSpan={11} className="px-6 py-12 text-center text-slate-500 italic text-sm">
                                         No products found{searchTerm ? ` matching "${searchTerm}"` : ''}.
                                     </td>
                                 </tr>
@@ -418,17 +418,20 @@ export const SkuMaster: React.FC = () => {
                                 products.map((product) => (
                                     <tr key={product.sku} className={`hover:bg-corp-accent/5 transition-colors group ${product.isArchived ? 'opacity-50' : ''}`}>
                                         <td className="px-6 py-4">
-                                            <div className={`w-fit px-4 py-1.5 rounded-xl text-xs font-bold border break-all whitespace-normal max-w-[200px] leading-tight text-center transition-all duration-300 shadow-[0_0_15px_rgba(59,130,246,0.1)] group-hover:scale-105 ${product.isArchived ? 'bg-slate-900 text-slate-500 border-slate-800' : 'bg-gradient-to-br from-blue-600/20 to-corp-accent/10 text-blue-100 border-blue-500/30'}`}>
+                                            <div className={`w-fit px-4 py-1.5 rounded-xl text-xs font-bold border whitespace-nowrap leading-tight text-center transition-all duration-300 shadow-[0_0_15px_rgba(59,130,246,0.1)] group-hover:scale-105 ${product.isArchived ? 'bg-slate-900 text-slate-500 border-slate-800' : 'bg-gradient-to-br from-blue-600/20 to-corp-accent/10 text-blue-100 border-blue-500/30'}`}>
                                                 {product.sku}
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <span className={`text-sm font-bold ${product.isArchived ? 'text-slate-600 line-through' : 'text-slate-300'}`}>{product.name}</span>
+                                            <div className="flex flex-col">
+                                                <span className={`text-sm font-bold leading-tight ${product.isArchived ? 'text-slate-600 line-through' : 'text-slate-300'}`}>{product.name}</span>
+                                                <span className="text-[10px] text-slate-500 md:hidden">{product.brand} • {product.category}</span>
+                                            </div>
                                         </td>
-                                        <td className="px-6 py-4">
+                                        <td className="px-6 py-4 hidden xl:table-cell">
                                             <span className="text-sm font-mono text-slate-400">{product.barcode || '-'}</span>
                                         </td>
-                                        <td className="px-6 py-4">
+                                        <td className="px-6 py-4 hidden md:table-cell">
                                             {product.brand ? (
                                                 <div className={`w-fit px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all duration-300 ${product.isArchived ? 'bg-slate-900 text-slate-600 border-slate-800' : 'bg-blue-600/10 text-blue-300 border-blue-500/20 shadow-[0_0_10px_rgba(59,130,246,0.05)]'}`}>
                                                     {product.brand}
@@ -437,17 +440,17 @@ export const SkuMaster: React.FC = () => {
                                                 <span className="text-xs text-slate-600">-</span>
                                             )}
                                         </td>
-                                        <td className="px-6 py-4 text-center">
+                                        <td className="px-6 py-4 text-center hidden 2xl:table-cell">
                                             <span className="text-xs font-mono text-slate-400">
                                                 {product.sides || '-'}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4">
+                                        <td className="px-6 py-4 hidden sm:table-cell">
                                             <div className={`w-fit px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all duration-300 ${product.isArchived ? 'bg-slate-900 text-slate-600 border-slate-800' : 'bg-corp-accent/10 text-slate-300 border-corp-secondary/30 shadow-[0_0_10px_rgba(59,130,246,0.05)]'}`}>
                                                 {product.category || 'No Category'}
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4 text-center">
+                                        <td className="px-6 py-4 text-center hidden lg:table-cell">
                                             <button
                                                 onClick={() => setSelectedSku(product.sku)}
                                                 className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all duration-300 ${product.hasPackaging ? 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30' : 'bg-slate-900 text-slate-600 border-slate-800 opacity-40 hover:opacity-100'}`}
@@ -456,20 +459,20 @@ export const SkuMaster: React.FC = () => {
                                                 {product.hasPackaging ? (product.packagings?.length || 0) : 0}
                                             </button>
                                         </td>
-                                        <td className="px-6 py-4 text-center">
+                                        <td className="px-6 py-4 text-center hidden lg:table-cell">
                                             <span className="text-sm font-bold text-slate-400">
-                                                {product.unitWeight ? `${product.unitWeight.toFixed(2)} kg` : (product.physicalAttributes?.weight ? `${product.physicalAttributes.weight.toFixed(2)} kg` : 'N/A')}
+                                                {product.unitWeight ? `${product.unitWeight.toFixed(2)}kg` : (product.physicalAttributes?.weight ? `${product.physicalAttributes.weight.toFixed(2)}kg` : 'N/A')}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4 text-right">
+                                        <td className="px-6 py-4 text-right hidden xl:table-cell">
                                             <span className="text-sm font-mono text-slate-500">
                                                 {(product.unitVolume ? product.unitVolume / 1000000 : (product.physicalAttributes
                                                     ? (product.physicalAttributes.length * product.physicalAttributes.width * product.physicalAttributes.height / 1000000)
-                                                    : 0)).toFixed(3)}
+                                                    : 0)).toFixed(5)}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4 text-center">
-                                            <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border ${product.hasImage ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-slate-500/10 text-slate-500 border-slate-500/20'}`}>
+                                        <td className="px-6 py-4 text-center hidden sm:table-cell">
+                                            <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border ${product.hasImage ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-slate-500/10 text-slate-500 border-slate-500/20'}`}>
                                                 {product.hasImage ? 'Yes' : 'No'}
                                             </span>
                                         </td>
